@@ -1,11 +1,13 @@
 import express from 'express';
-import { nanoid } from 'nanoid';
-import connectToDB from './src/config/mongo.config.js';
-import urlSchema from './src/models/shortUrl.model.js';
 import dotenv from 'dotenv';
+import connectToDB from './src/config/mongo.config.js';
+import shortUrlRouter from './src/routes/shortUrl.route.js';
+import { redirectFromShortUrl } from './src/controller/shortUrl.controller.js';
+import { globalErrorHandler } from './src/middlewares/error.middleware.js';
+import { notFoundHandler } from './src/middlewares/notFound.middleware.js';
+import { wrapAsync } from './src/utils/wrapAsync.js';
 
 dotenv.config({ path: './.env' });
-
 
 const app = express();
 
@@ -14,44 +16,11 @@ app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 5000;
 
-app.post('/api/create', async (req, res) => {
-    try {
-        const { url } = req.body;
-        const shortUrl = nanoid(7);
-        const newUrl = new urlSchema({
-            fullUrl: url,
-            shortUrl: shortUrl,
-        });
-        await newUrl.save();
-        res.status(201).json(newUrl);
-    } catch (error) {
-        console.error("Error in POST /api/create:", error);
-        res.status(500).json({ error: "Server error" });
-    }
-});
+app.use('/api/create', shortUrlRouter);
+app.get('/:id', wrapAsync(redirectFromShortUrl));
 
-
-app.get('/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const url = await urlSchema.findOne({ shortUrl: id });
-        if (url) {
-            let redirectUrl = url.fullUrl;
-            if (!/^https?:\/\//i.test(redirectUrl)) {
-                redirectUrl = "http://" + redirectUrl;
-            }
-            res.redirect(redirectUrl);
-        } else {
-            res.status(404).json({ error: 'URL not found' });
-        }
-    } catch (error) {
-        console.error("Error in GET /:id:", error);
-        res.status(500).json({ error: "Server error" });
-    }
-});
-
-
-
+app.use(notFoundHandler);
+app.use(globalErrorHandler);
 
 app.listen(PORT, () => {
     connectToDB();
