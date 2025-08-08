@@ -6,10 +6,14 @@ import { redirectFromShortUrl } from './src/controller/shortUrl.controller.js';
 import { globalErrorHandler } from './src/middlewares/error.middleware.js';
 import { notFoundHandler } from './src/middlewares/notFound.middleware.js';
 import { wrapAsync } from './src/utils/wrapAsync.js';
+import cors from 'cors';
+
 
 dotenv.config({ path: './.env' });
 
 const app = express();
+
+app.use(cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
