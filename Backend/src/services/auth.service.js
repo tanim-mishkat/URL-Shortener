@@ -18,3 +18,13 @@ export const registerUserService = async (name, email, password) => {
     const token = signToken({ id: newUser._id });
     return token;
 };
+
+export const loginUserService = async (email, password) => {
+    const user = await findUserByEmail(email);
+    if (!user || user.password !== password) {
+        throw new AppError("Invalid credentials", 401);
+    }
+
+    const token = signToken({ id: user._id });
+    return token;
+};
