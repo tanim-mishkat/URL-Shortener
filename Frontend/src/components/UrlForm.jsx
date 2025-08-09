@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import { createShortUrl } from "../api/shortUrl.api";
 
 const UrlForm = () => {
   const [url, setUrl] = useState("https://example.com");
@@ -13,10 +13,8 @@ const UrlForm = () => {
     setShortUrl("");
     setCopied(false);
     try {
-      const { data } = await axios.post("http://localhost:5000/api/create", {
-        url,
-      });
-      setShortUrl(data.shortUrl);
+      const shortUrlResponse = await createShortUrl(url);
+      setShortUrl(shortUrlResponse);
     } catch (err) {
       setError("Could not shorten URL. Try again.");
     }
