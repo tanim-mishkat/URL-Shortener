@@ -8,18 +8,19 @@ import { globalErrorHandler } from './src/middlewares/error.middleware.js';
 import { notFoundHandler } from './src/middlewares/notFound.middleware.js';
 import { wrapAsync } from './src/utils/wrapAsync.js';
 import cors from 'cors';
-
+import { attachUser } from './src/utils/attachUser.js';
+import cookieParser from 'cookie-parser';
 
 dotenv.config({ path: './.env' });
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-const PORT = process.env.PORT || 5000;
+app.use(attachUser)
 
 app.use('/api/create', shortUrlRouter);
 app.use('/api/auth', authRoutes);

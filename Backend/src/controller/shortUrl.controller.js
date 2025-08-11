@@ -2,9 +2,12 @@ import { getShortUrl } from "../dao/shortUrl.js";
 import AppError from "../errors/AppError.js";
 import { createShortUrlWithUser, createShortUrlWithoutUser } from "../services/shortUrl.service.js";
 
-export const createShortUrl = async (req, res) => {
+export const createShortUrl = async (req, res, next) => {
 
-    let { url } = req.body;
+    const data = req.body;
+    console.log("data", data)
+    let url = data.url;
+    let slug = data.slug;
     if (!url) return next(new AppError("URL is required", 400));
 
     // Add protocol if missing
@@ -13,12 +16,25 @@ export const createShortUrl = async (req, res) => {
     }
 
     try {
-        const shortUrl = await createShortUrlWithoutUser(url);
+        let shortUrl;
+        if (req.user) {
+            shortUrl = await createShortUrlWithUser(url, req.user._id, slug);
+        } else {
+            shortUrl = await createShortUrlWithoutUser(url);
+        }
         res.status(201).json({ shortUrl: process.env.APP_URL + shortUrl });
     } catch (err) {
         next(err);
     }
 };
+
+export const createCustomShortUrl = async (req, res) => {
+    const { url, slug } = req.body;
+    if (req.user) {
+        const shortUrl = await createShortUrlWithUser(url, req.user._id);
+    } else { const shortUrl = await createShortUrlWithoutUser(url); }
+    res.status(201).json({ shortUrl: process.env.APP_URL + shortUrl });
+}
 
 export const redirectFromShortUrl = async (req, res, next) => {
     try {
@@ -30,3 +46,4 @@ export const redirectFromShortUrl = async (req, res, next) => {
         next(err);
     }
 };
+

@@ -6,7 +6,7 @@ export const registerUserService = async (name, email, password) => {
     const user = await findUserByEmail(email);
 
     if (user) {
-        throw new AppError("User already exists", 400);
+        throw new AppError("User already exists", 409);
     }
 
     const newUser = await createUser(name, email, password);
@@ -26,5 +26,5 @@ export const loginUserService = async (email, password) => {
     }
 
     const token = signToken({ id: user._id });
-    return token;
+    return { token, user };
 };
