@@ -3,6 +3,7 @@ import axios, { isAxiosError } from "axios";
 const axiosInstance = axios.create({
     baseURL: "http://localhost:5000/",
     timeout: 10000, // 10s
+    withCredentials: true
 });
 
 // Response interceptor for error handling
