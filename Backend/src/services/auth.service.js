@@ -16,15 +16,25 @@ export const registerUserService = async (name, email, password) => {
     }
 
     const token = signToken({ id: newUser._id });
-    return token;
+    return { token, newUser };
 };
 
 export const loginUserService = async (email, password) => {
     const user = await findUserByEmail(email);
-    if (!user || user.password !== password) {
-        throw new AppError("Invalid credentials", 401);
+    if (!user) {
+        throw new AppError("Invalid email or password", 404);
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+        throw new AppError("Invalid email or password", 401);
     }
 
     const token = signToken({ id: user._id });
-    return { token, user };
+    // Remove password before returning
+    const userSafe = user.toObject();
+    delete userSafe.password;
+
+    return { token, user: userSafe };
 };
+

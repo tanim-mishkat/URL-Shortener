@@ -17,5 +17,5 @@ export const loginUserController = wrapAsync(async (req, res) => {
     console.log(user)
     res.cookie("accessToken", token, cookieOptions);
     console.log(token)
-    res.status(200).json({ message: "User logged in successfully" });
+    res.status(200).json({ user: user, message: "User logged in successfully" });
 });

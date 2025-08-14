@@ -1,7 +1,7 @@
 import userSchema from "../models/user.model.js";
 
 export const findUserByEmail = async (email) => {
-    const user = await userSchema.findOne({ email: email });
+    const user = await userSchema.findOne({ email: email }).select("+password");
     return user;
 }
 

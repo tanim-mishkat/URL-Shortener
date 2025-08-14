@@ -2,7 +2,9 @@ import axiosInstance from "../utils/axiosInstance";
 
 export const loginUser = async (password, email) => {
     const { data } = await axiosInstance.post("api/auth/login", { email, password });
-    console.log("data 1", data)
+    if (data) {
+        console.log("logged in user", data)
+    }
     return data;
 }
 export const registerUser = async (name, password, email) => {

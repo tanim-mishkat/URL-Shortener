@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/user.api";
+import { useDispatch, useSelector } from "react-redux";
+import { login } from "../store/slice/authSlice.js";
 
 export default function LoginForm({ setLogin }) {
   const [email, setEmail] = useState("user1@gmail.com");
@@ -9,7 +11,10 @@ export default function LoginForm({ setLogin }) {
   const [showPw, setShowPw] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const dispatch = useDispatch();
 
+  const auth = useSelector((state) => state.auth);
+  console.log(auth);
   function validate({ email, password }) {
     const e = {};
     if (!email.trim()) e.email = "Required";
@@ -30,6 +35,7 @@ export default function LoginForm({ setLogin }) {
     try {
       setLoading(true);
       const res = await loginUser(password, email);
+      dispatch(login(res.user));
       setMsg("Logged in!");
       // handle login success (e.g., redirect or set user context)
     } catch (err) {
