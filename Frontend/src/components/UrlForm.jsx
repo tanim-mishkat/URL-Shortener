@@ -1,11 +1,17 @@
 import React, { useState } from "react";
 import { createShortUrl } from "../api/shortUrl.api";
+import { useSelector } from "react-redux";
+import UserUrls from "./UserUrls.jsx";
+import { QueryClient } from "@tanstack/react-query";
+import { queryClient } from "../main.jsx";
 
 const UrlForm = () => {
   const [url, setUrl] = useState("https://example.com");
   const [shortUrl, setShortUrl] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [customSlug, setCustomSlug] = useState("");
+  const { isLoggedIn } = useSelector((state) => state.auth);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -13,9 +19,12 @@ const UrlForm = () => {
     setShortUrl("");
     setCopied(false);
     try {
-      const shortUrlResponse = await createShortUrl(url);
+      const shortUrlResponse = await createShortUrl(url, customSlug);
       setShortUrl(shortUrlResponse);
+      queryClient.invalidateQueries({ queryKey: ["userUrls"] });
+      setError("");
     } catch (err) {
+      console.log(err);
       setError("Could not shorten URL. Try again.");
     }
   };
@@ -41,12 +50,22 @@ const UrlForm = () => {
         required
         className="p-3 border rounded-lg focus:outline-none focus:ring focus:ring-blue-200 w-full text-base"
       />
+      {isLoggedIn && (
+        <input
+          type="text"
+          value={customSlug}
+          onChange={(e) => setCustomSlug(e.target.value)}
+          placeholder="Custom slug (optional)"
+          className="p-3 border rounded-lg focus:outline-none focus:ring focus:ring-blue-200 w-full text-base"
+        />
+      )}
       <button
         type="submit"
         className="bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition w-full"
       >
         Shorten URL
       </button>
+
       {error && (
         <div className="p-2 bg-red-100 text-red-700 rounded text-center text-sm w-full">
           {error}

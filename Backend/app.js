@@ -10,7 +10,7 @@ import { wrapAsync } from './src/utils/wrapAsync.js';
 import cors from 'cors';
 import { attachUser } from './src/utils/attachUser.js';
 import cookieParser from 'cookie-parser';
-
+import userRoutes from './src/routes/user.route.js';
 dotenv.config({ path: './.env' });
 
 const app = express();
@@ -30,6 +30,8 @@ app.use(attachUser)
 app.use('/api/create', shortUrlRouter);
 app.use('/api/auth', authRoutes);
 app.get('/:id', wrapAsync(redirectFromShortUrl));
+app.use('/api/user', userRoutes);
+
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
