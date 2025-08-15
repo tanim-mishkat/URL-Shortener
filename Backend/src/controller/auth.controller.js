@@ -19,3 +19,7 @@ export const loginUserController = wrapAsync(async (req, res) => {
     console.log(token)
     res.status(200).json({ user: user, message: "User logged in successfully" });
 });
+
+export const meController = wrapAsync(async (req, res) => {
+    res.status(200).json({ user: req.user });
+})

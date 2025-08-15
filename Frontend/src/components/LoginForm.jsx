@@ -3,6 +3,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/user.api";
 import { useDispatch, useSelector } from "react-redux";
 import { login } from "../store/slice/authSlice.js";
+import { useNavigate } from "@tanstack/react-router";
 
 export default function LoginForm({ setLogin }) {
   const [email, setEmail] = useState("user1@gmail.com");
@@ -12,6 +13,7 @@ export default function LoginForm({ setLogin }) {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
   const auth = useSelector((state) => state.auth);
   console.log(auth);
@@ -37,7 +39,7 @@ export default function LoginForm({ setLogin }) {
       const res = await loginUser(password, email);
       dispatch(login(res.user));
       setMsg("Logged in!");
-      // handle login success (e.g., redirect or set user context)
+      navigate({ to: "/dashboard" });
     } catch (err) {
       setMsg(
         err?.response?.data?.message ||

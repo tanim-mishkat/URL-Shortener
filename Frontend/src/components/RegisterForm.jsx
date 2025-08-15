@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { registerUser } from "../api/user.api";
+import { useNavigate } from "@tanstack/react-router";
 
 export default function RegisterForm({ setLogin }) {
   const [name, setName] = useState("");
@@ -13,6 +14,7 @@ export default function RegisterForm({ setLogin }) {
   const [showPw2, setShowPw2] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   function validate({ name, email, password, confirm, agree }) {
     const e = {};
@@ -40,7 +42,7 @@ export default function RegisterForm({ setLogin }) {
       setLoading(true);
       const res = await registerUser(name, password, email);
       setMsg("Registered!");
-      // Optionally reset fields here
+      navigate({ to: "/dashboard" });
     } catch (err) {
       setMsg(
         err?.response?.data?.message ||

@@ -27,7 +27,7 @@ const Navbar = () => {
       {/* Right - Login Button */}
       <div>
         <Link
-          to="/login"
+          to="/auth"
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
         >
           Login
