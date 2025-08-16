@@ -31,7 +31,6 @@ export const loginUserService = async (email, password) => {
     }
 
     const token = signToken({ id: user._id });
-    // Remove password before returning
     const userSafe = user.toObject();
     delete userSafe.password;
 

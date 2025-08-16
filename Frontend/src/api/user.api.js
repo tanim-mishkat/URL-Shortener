@@ -15,9 +15,21 @@ export const registerUser = async (name, password, email) => {
 
 
 export const logoutUser = async () => {
-    const { data } = await axiosInstance.get("api/auth/logout");
-    return data;
-}
+    try {
+        const res = await axiosInstance.post("/api/auth/logout", {}, { withCredentials: true });
+
+        if (!res?.data) {
+            throw new Error("Logout failed: No response from server.");
+        }
+
+        return res.data;
+    } catch (err) {
+        if (err.response?.data?.message) {
+            throw new Error(`Logout failed: ${err.response.data.message}`);
+        }
+        throw new Error("Something went wrong while logging out. Please try again.");
+    }
+};
 
 export const getCurrentUser = async () => {
     const { data } = await axiosInstance.get("api/auth/me");

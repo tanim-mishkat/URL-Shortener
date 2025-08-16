@@ -20,6 +20,16 @@ export const loginUserController = wrapAsync(async (req, res) => {
     res.status(200).json({ user: user, message: "User logged in successfully" });
 });
 
+export const logoutUserController = (req, res) => {
+    // Clear the same cookie the login/register set
+    res.clearCookie("accessToken", {
+        ...cookieOptions,
+        expires: new Date(0), 
+        maxAge: 0,
+    });
+    return res.status(200).json({ message: "Logged out successfully" });
+};
+
 export const meController = wrapAsync(async (req, res) => {
     res.status(200).json({ user: req.user });
 })

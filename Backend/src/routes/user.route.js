@@ -5,6 +5,5 @@ const router = express.Router();
 
 router.get("/urls", authMiddleware, getAllUserUrls);
 
-
 export default router;
 

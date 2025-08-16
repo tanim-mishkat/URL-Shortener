@@ -6,73 +6,46 @@ const axiosInstance = axios.create({
     withCredentials: true
 });
 
-// Response interceptor for error handling
 axiosInstance.interceptors.response.use(
     (response) => response,
     (error) => {
-        let message = "An unexpected error occurred.";
+        let friendlyMessage = "An unexpected error occurred.";
 
         if (error.code === "ECONNABORTED") {
-            message = "Request timed out. Please try again.";
-        }
-        else if (error.response) {
+            friendlyMessage = "Request timed out. Please try again.";
+        } else if (error.response) {
             const status = error.response.status;
             const serverMsg = error.response.data?.message;
-
             switch (status) {
-                case 400:
-                    message = serverMsg || "Bad request. Please check your input.";
-                    break;
-                case 401:
-                    message = serverMsg || "Unauthorized. Please log in.";
-                    break;
-                case 403:
-                    message = serverMsg || "Forbidden. You don't have permission to access this resource.";
-                    break;
-                case 404:
-                    message = serverMsg || "Not found. The requested resource doesn't exist.";
-                    break;
-                case 409:
-                    message = serverMsg || "Conflict. The request could not be completed due to a conflict.";
-                    break;
-                case 422:
-                    message = serverMsg || "Validation failed. Please check your input.";
-                    break;
-                case 429:
-                    message = serverMsg || "Too many requests. Please slow down.";
-                    break;
-                case 500:
-                    message = serverMsg || "Internal server error. Please try again later.";
-                    break;
-                case 502:
-                    message = serverMsg || "Bad gateway. Please try again.";
-                    break;
-                case 503:
-                    message = serverMsg || "Service unavailable. Please try again later.";
-                    break;
-                case 504:
-                    message = serverMsg || "Gateway timeout. Please try again.";
-                    break;
-                default:
-                    message = serverMsg || `Error ${status}`;
+                case 400: friendlyMessage = serverMsg || "Bad request. Please check your input."; break;
+                case 401: friendlyMessage = serverMsg || "Unauthorized. Please log in."; break;
+                case 403: friendlyMessage = serverMsg || "Forbidden. You don't have permission to access this resource."; break;
+                case 404: friendlyMessage = serverMsg || "Not found. The requested resource doesn't exist."; break;
+                case 409: friendlyMessage = serverMsg || "This email is already registered. Try signing in instead."; break;
+                case 422: friendlyMessage = serverMsg || "Validation failed. Please check your input."; break;
+                case 429: friendlyMessage = serverMsg || "Too many requests. Please slow down."; break;
+                case 500: friendlyMessage = serverMsg || "Internal server error. Please try again later."; break;
+                case 502: friendlyMessage = serverMsg || "Bad gateway. Please try again."; break;
+                case 503: friendlyMessage = serverMsg || "Service unavailable. Please try again later."; break;
+                case 504: friendlyMessage = serverMsg || "Gateway timeout. Please try again."; break;
+                default: friendlyMessage = serverMsg || `Error ${status}`;
             }
-        }
-        else if (error.request) {
-            message = "No response from server. Check your connection.";
-        }
-        else {
-            message = error.message;
+        } else if (error.request) {
+            friendlyMessage = "No response from server. Check your connection.";
+        } else {
+            friendlyMessage = error.message;
         }
 
-        console.error("API Error:", message);
+        console.error("API Error:", friendlyMessage);
+
         return Promise.reject({
             isAxiosError: true,
-            message: error.response?.data?.message || error.message,
             status: error.response?.status,
-            data: error.response?.data
+            message: error.response?.data?.message || error.message,
+            data: error.response?.data,
+            friendlyMessage,
         });
     }
 );
-
 
 export default axiosInstance;
