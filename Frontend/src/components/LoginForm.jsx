@@ -16,7 +16,6 @@ export default function LoginForm({ setLogin }) {
   const navigate = useNavigate();
 
   const auth = useSelector((state) => state.auth);
-  console.log(auth);
   function validate({ email, password }) {
     const e = {};
     if (!email.trim()) e.email = "Please enter your email address";

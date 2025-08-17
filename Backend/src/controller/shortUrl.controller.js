@@ -5,7 +5,6 @@ import { createShortUrlWithUser, createShortUrlWithoutUser } from "../services/s
 export const createShortUrl = async (req, res, next) => {
 
     const data = req.body;
-    console.log("data", data)
     let url = data.url;
     let slug = data.slug;
     if (!url) return next(new AppError("URL is required", 400));

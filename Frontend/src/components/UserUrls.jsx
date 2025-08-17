@@ -15,8 +15,6 @@ const UserUrls = () => {
 
   const urls = data?.urls || [];
 
-  console.log("user data", urls);
-
   const handleCopy = (id, shortUrl) => {
     const copiedUrl = `http://localhost:5000/${shortUrl}`;
     navigator.clipboard.writeText(copiedUrl);

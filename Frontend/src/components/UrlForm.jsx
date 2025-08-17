@@ -25,11 +25,8 @@ const UrlForm = () => {
       queryClient.invalidateQueries({ queryKey: ["userUrls"] });
       setError("");
     } catch (err) {
-      console.log(err);
       setError(
-        err?.response?.data?.message ||
-          err?.message ||
-          "We couldn’t shorten that link. Please check the URL and try again."
+        "URL already exists. Please enter a different URL or use a different custom slug."
       );
     }
   };
