@@ -9,8 +9,8 @@ const clickAggSchema = new mongoose.Schema(
 
         total: { type: Number, default: 0 },
 
-        country: countsMap,   
-        referrer: countsMap, 
+        country: countsMap,
+        referrer: countsMap,
         device: {
             desktop: { type: Number, default: 0 },
             mobile: { type: Number, default: 0 },

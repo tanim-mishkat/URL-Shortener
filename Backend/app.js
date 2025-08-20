@@ -10,6 +10,7 @@ import cors from 'cors';
 import { attachUser } from './src/utils/attachUser.js';
 import cookieParser from 'cookie-parser';
 import userRoutes from './src/routes/user.route.js';
+import analyticsRoutes from './src/routes/analytics.route.js';
 dotenv.config({ path: './.env' });
 
 const app = express();
@@ -29,9 +30,10 @@ app.use(attachUser)
 app.use('/api/create', shortUrlRouter);
 app.use('/api/links', shortUrlRouter);
 app.use('/api/auth', authRoutes);
-app.get('/:id', redirectFromShortUrl);
 app.use('/api/user', userRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
+app.get('/:id', redirectFromShortUrl);
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);

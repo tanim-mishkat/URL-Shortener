@@ -16,7 +16,9 @@ export const registerUserService = async (name, email, password) => {
     }
 
     const token = signToken({ id: newUser._id });
-    return { token, newUser };
+    const userSafe = newUser.toObject();
+    delete userSafe.password;
+    return { token, user: userSafe };
 };
 
 export const loginUserService = async (email, password) => {

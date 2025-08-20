@@ -1,19 +1,10 @@
-import AppError from "../errors/AppError.js";
-import {
-    getShortUrlForRedirect,
-    getShortUrlNoInc,
-    updateLinkStatus,
-    softDeleteLink,
-    hardDeleteLink,
-} from "../dao/shortUrl.js";
-import {
-    createShortUrlWithUser,
-    createShortUrlWithoutUser,
-} from "../services/shortUrl.service.js";
-
 import geoip from "geoip-lite";
 import { UAParser } from "ua-parser-js";
-import ClickAgg from "../models/clickAgg.model.js";
+import AppError from "../errors/AppError.js";
+import { incAggCounters } from "../dao/analytics.dao.js";
+import { getShortUrlForRedirect, getShortUrlNoInc, } from "../dao/shortUrl.dao.js";
+import { createShortUrlWithUser, createShortUrlWithoutUser } from "../services/shortUrl.service.js";
+import { setStatusService, softDeleteService, hardDeleteService } from "../services/link.service.js";
 
 // helpers
 const getClientIp = (req) => {
@@ -104,19 +95,13 @@ export const redirectFromShortUrl = async (req, res, next) => {
                 }
 
                 const day = truncateToDayUTC(new Date());
-                await ClickAgg.updateOne(
-                    { linkId: doc._id, day },
-                    {
-                        $inc: {
-                            total: 1,
-                            [`country.${country}`]: 1,
-                            [`referrer.${refHost}`]: 1,
-                            [`device.${deviceBucket}`]: 1,
-                        },
-                        $setOnInsert: { linkId: doc._id, day },
-                    },
-                    { upsert: true }
-                );
+                await incAggCounters({
+                    linkId: doc._id,
+                    day,
+                    country,
+                    refHost,
+                    device: deviceBucket,
+                });
             } catch (e) {
                 if (process.env.NODE_ENV === "development")
                     console.error("Analytics error:", e?.message || e);
@@ -130,18 +115,11 @@ export const redirectFromShortUrl = async (req, res, next) => {
     }
 };
 
+
 // LINK MANAGEMENT
 export const updateLinkStatusController = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const { status } = req.body;
-
-        if (!["active", "paused", "disabled"].includes(status)) {
-            throw new AppError("Invalid status", 400);
-        }
-        const updated = await updateLinkStatus(id, req.user._id, status);
-        if (!updated) throw new AppError("Link not found", 404);
-
+        const updated = await setStatusService(req.user._id, req.params.id, req.body.status);
         res.status(200).json({ message: "Status updated", link: updated });
     } catch (err) {
         next(err);
@@ -150,12 +128,8 @@ export const updateLinkStatusController = async (req, res, next) => {
 
 export const softDeleteLinkController = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const updated = await softDeleteLink(id, req.user._id);
-        if (!updated) throw new AppError("Link not found", 404);
-        res
-            .status(200)
-            .json({ message: "Link disabled (soft deleted)", link: updated });
+        const updated = await softDeleteService(req.user._id, req.params.id);
+        res.status(200).json({ message: "Link disabled (soft deleted)", link: updated });
     } catch (err) {
         next(err);
     }
@@ -163,9 +137,7 @@ export const softDeleteLinkController = async (req, res, next) => {
 
 export const hardDeleteLinkController = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        const removed = await hardDeleteLink(id, req.user._id);
-        if (!removed) throw new AppError("Link not found", 404);
+        await hardDeleteService(req.user._id, req.params.id);
         res.status(200).json({ message: "Link permanently deleted" });
     } catch (err) {
         next(err);
