@@ -112,7 +112,6 @@ export default function LoginForm({ setLogin }) {
                   </span>
                 </label>
 
-                {/* Changed from <a> to <Link> */}
                 <Link
                   to="/forgot-password"
                   className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-200"

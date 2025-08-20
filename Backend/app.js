@@ -6,7 +6,6 @@ import authRoutes from './src/routes/auth.route.js';
 import { redirectFromShortUrl } from './src/controller/shortUrl.controller.js';
 import { globalErrorHandler } from './src/middlewares/error.middleware.js';
 import { notFoundHandler } from './src/middlewares/notFound.middleware.js';
-import { wrapAsync } from './src/utils/wrapAsync.js';
 import cors from 'cors';
 import { attachUser } from './src/utils/attachUser.js';
 import cookieParser from 'cookie-parser';
@@ -28,8 +27,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(attachUser)
 
 app.use('/api/create', shortUrlRouter);
+app.use('/api/links', shortUrlRouter);
 app.use('/api/auth', authRoutes);
-app.get('/:id', wrapAsync(redirectFromShortUrl));
+app.get('/:id', redirectFromShortUrl);
 app.use('/api/user', userRoutes);
 
 
