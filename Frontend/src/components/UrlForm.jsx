@@ -43,14 +43,12 @@ const UrlForm = () => {
         }
       })();
 
-      // Create on server
       const shortUrlResponse = await createShortUrl(normalized, customSlug);
       setShortUrl(shortUrlResponse);
 
       // Refresh the user URLs list without aggressive polling
       await queryClient.invalidateQueries({ queryKey: ["userUrls"] });
 
-      // Reset inputs
       setError("");
       setCustomSlug("");
       setUrl("https://");

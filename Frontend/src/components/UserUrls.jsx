@@ -14,24 +14,21 @@ const UserUrls = () => {
   const [copiedId, setCopiedId] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
-  // Compute the base once
   const base = useMemo(() => getPublicBase().replace(/\/$/, ""), []);
 
   const {
     data,
     isLoading,
     error,
-    isFetching, // light "updating…" indicator
-    refetch, // manual refresh button
+    isFetching, 
+    refetch, 
   } = useQuery({
     queryKey: ["userUrls"],
     queryFn: getAllUserUrls,
-    // De-flicker settings:
     keepPreviousData: true,
     placeholderData: (prev) => prev,
     staleTime: 20_000,
     refetchOnWindowFocus: false,
-    // Turn off aggressive polling (that caused the quick flick)
     refetchInterval: false,
     retry: 1,
   });
@@ -181,7 +178,6 @@ const UserUrls = () => {
     </div>
   );
 
-  // Initial skeleton (only when no cached data yet)
   if (isLoading && !data) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
