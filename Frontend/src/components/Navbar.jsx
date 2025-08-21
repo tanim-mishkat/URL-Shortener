@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useSelector, useDispatch } from "react-redux";
 import { useState } from "react";
-import { logout } from "../store/slice/authSlice.js"; 
+import { logout } from "../store/slice/authSlice.js";
 
 const Navbar = () => {
   const navigate = useNavigate();

@@ -103,11 +103,12 @@ export const redirectFromShortUrl = async (req, res, next) => {
                     device: deviceBucket,
                 });
             } catch (e) {
-                if (process.env.NODE_ENV === "development")
-                    console.error("Analytics error:", e?.message || e);
+                // if (process.env.NODE_ENV === "development")
+                console.error("Analytics error:", e?.message || e);
             }
         })();
         //END analytics capture
+        console.log("analytics capture for", doc._id.toString());
 
         return res.redirect(doc.fullUrl);
     } catch (err) {
