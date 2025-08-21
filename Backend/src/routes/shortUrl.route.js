@@ -1,18 +1,20 @@
 import express from "express";
 import { wrapAsync } from "../utils/wrapAsync.js";
-import { authMiddleware } from "../middlewares/auth.middlware.js";
 import {
     createShortUrl,
     updateLinkStatusController,
     softDeleteLinkController,
     hardDeleteLinkController,
+    updateLinkTagsController,
+    moveLinkFolderController,
 } from "../controller/shortUrl.controller.js";
 
-const router = express.Router();
+export const createRouter = express.Router();
+createRouter.post("/", wrapAsync(createShortUrl));
 
-router.post("/", wrapAsync(createShortUrl));
-router.patch("/:id/status", authMiddleware, wrapAsync(updateLinkStatusController));
-router.delete("/:id", authMiddleware, wrapAsync(softDeleteLinkController));
-router.delete("/:id/permanent", authMiddleware, wrapAsync(hardDeleteLinkController));
-
-export default router;
+export const linksRouter = express.Router();
+linksRouter.patch("/:id/status", wrapAsync(updateLinkStatusController));
+linksRouter.delete("/:id", wrapAsync(softDeleteLinkController));
+linksRouter.delete("/:id/permanent", wrapAsync(hardDeleteLinkController));
+linksRouter.patch("/:id/tags", wrapAsync(updateLinkTagsController));
+linksRouter.patch("/:id/folder", wrapAsync(moveLinkFolderController));

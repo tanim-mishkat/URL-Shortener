@@ -21,22 +21,17 @@ const UrlForm = () => {
     setIsSubmitting(true);
 
     try {
-      // Normalize & validate input
       const trimmed = url.trim();
-
-      // Block dangerous schemes early
       if (/^(javascript:|data:)/i.test(trimmed)) {
         throw { friendlyMessage: "Unsupported URL scheme." };
       }
-
-      // Ensure protocol, strip fragment, and re-serialize
       const normalized = (() => {
         try {
           const withProto = trimmed.includes("://")
             ? trimmed
             : `https://${trimmed}`;
           const u = new URL(withProto);
-          u.hash = ""; // avoid persisting tracking fragments
+          u.hash = ""; 
           return u.toString();
         } catch {
           throw { friendlyMessage: "Please enter a valid URL." };

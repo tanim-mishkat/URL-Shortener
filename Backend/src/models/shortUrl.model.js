@@ -9,7 +9,7 @@ const shortUrlSchema = new mongoose.Schema(
 
         status: {
             type: String,
-            enum: ["active", "paused", "disabled"], 
+            enum: ["active", "paused", "disabled"],
             default: "active",
             index: true,
         },
@@ -20,10 +20,17 @@ const shortUrlSchema = new mongoose.Schema(
             enum: ["private", "unlisted", "public"],
             default: "private",
         },
+        tags: { type: [String], default: [] },
+        folderId: { type: mongoose.Schema.Types.ObjectId, ref: "Folder", default: null },
     },
+
+
+
     { timestamps: true }
 );
 
 shortUrlSchema.index({ user: 1, status: 1 });
+shortUrlSchema.index({ user: 1, folderId: 1, createdAt: -1 });
+shortUrlSchema.index({ user: 1, tags: 1 });
 
 export default mongoose.model("shortUrl", shortUrlSchema);

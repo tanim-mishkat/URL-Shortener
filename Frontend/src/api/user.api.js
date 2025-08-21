@@ -1,4 +1,7 @@
 import axiosInstance from "../utils/axiosInstance.js";
+import { request } from "../utils/https.js";
+
+
 
 export const loginUser = async (password, email) => {
     const { data } = await axiosInstance.post("api/auth/login", { email, password });
@@ -32,7 +35,10 @@ export const getCurrentUser = async () => {
     return data;
 }
 
-export const getAllUserUrls = async () => {
-    const { data } = await axiosInstance.get("api/user/urls");
-    return data;
+export async function getAllUserUrls(filters = {}) {
+    const usp = new URLSearchParams();
+    if (filters.folderId) usp.set("folderId", filters.folderId);
+    if (filters.tag) usp.set("tag", String(filters.tag).trim());
+    if (filters.q) usp.set("q", String(filters.q).trim());
+    return request(`/api/user/urls?${usp.toString()}`);
 }

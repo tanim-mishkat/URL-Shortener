@@ -1,12 +1,18 @@
 import express from "express";
-import { loginUserController, logoutUserController, meController, registerUserController } from "../controller/auth.controller.js";
-import { authMiddleware } from "../middlewares/auth.middlware.js";
+import { wrapAsync } from "../utils/wrapAsync.js";
+import {
+    loginUserController,
+    logoutUserController,
+    meController,
+    registerUserController,
+} from "../controller/auth.controller.js";
+import { requireAuth } from "../middlewares/auth.middleware.js";
+
 const router = express.Router();
 
-router.post("/register", (registerUserController));
-router.post("/login", (loginUserController));
-router.post("/logout", authMiddleware, logoutUserController);
-router.get("/me", authMiddleware, meController);
+router.post("/register", wrapAsync(registerUserController));
+router.post("/login", wrapAsync(loginUserController));
+router.post("/logout", requireAuth, wrapAsync(logoutUserController));
+router.get("/me", requireAuth, wrapAsync(meController));
 
 export default router;
-

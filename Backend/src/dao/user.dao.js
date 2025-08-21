@@ -1,23 +1,24 @@
 import shortUrlModel from "../models/shortUrl.model.js";
-import userSchema from "../models/user.model.js";
+import User from "../models/user.model.js";
 
-export const findUserByEmail = async (email) => {
-    const user = await userSchema.findOne({ email: email }).select("+password");
-    return user;
-}
+export const findUserByEmail = (email) =>
+    User.findOne({ email }).select("+password");
 
-export const findUserById = async (id) => {
-    const user = await userSchema.findById(id);
-    return user;
-}
+export const findUserById = (id) =>
+    User.findById(id);
 
-export const createUser = async (name, email, password) => {
-    const user = await userSchema.create({ name, email, password });
-    await user.save();
-    return user;
-}
+export const createUser = (name, email, password) =>
+    User.create({ name, email, password });
 
-export const getAllUserUrls = async (id) => {
-    const urls = await shortUrlModel.find({ user: id });
-    return urls;
-}
+// filters: { folderId?: string | 'unfiled', tag?: string }
+export const getAllUserUrls = async (userId, filters = {}) => {
+    const { folderId, tag } = filters;
+    const query = { user: userId };
+
+    if (folderId === "unfiled") query.folderId = null;
+    else if (folderId) query.folderId = folderId;
+
+    if (tag) query.tags = String(tag).trim().toLowerCase();
+
+    return shortUrlModel.find(query).sort({ createdAt: -1 }).lean();
+};

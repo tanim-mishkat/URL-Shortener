@@ -1,5 +1,3 @@
-export const wrapAsync = (fn) => {
-    return function (req, res, next) {
-        fn(req, res, next).catch(next);
-    };
+export const wrapAsync = (fn) => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
 };

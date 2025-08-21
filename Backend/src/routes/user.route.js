@@ -1,9 +1,9 @@
 import express from "express";
-import { authMiddleware } from "../middlewares/auth.middlware.js";
+import { wrapAsync } from "../utils/wrapAsync.js";
 import { getAllUserUrls } from "../controller/user.controller.js";
+
 const router = express.Router();
 
-router.get("/urls", authMiddleware, getAllUserUrls);
+router.get("/urls", wrapAsync(getAllUserUrls));
 
 export default router;
-
