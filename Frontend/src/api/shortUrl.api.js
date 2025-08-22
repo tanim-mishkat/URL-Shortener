@@ -38,3 +38,26 @@ export async function moveLinkToFolder(id, folderId) {
         body: JSON.stringify({ folderId }),
     });
 }
+
+export async function listLinks({ limit = 50, cursor, folderId, q, status, tags } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (cursor) params.set("cursor", cursor);
+  if (folderId === "unfiled") params.set("folderId", "null");
+  else if (folderId) params.set("folderId", folderId);
+  if (q) params.set("q", q);
+  if (status) params.set("status", status);
+  if (tags?.length) params.set("tags", tags.join(","));
+  return request(`/api/links?${params.toString()}`);
+}
+
+export async function batchLinks(op, ids, payload = {}) {
+  return request(`/api/links/batch`, {
+    method: "POST",
+    body: JSON.stringify({ op, ids, payload }),
+  });
+}
+
+export async function restoreLink(id) {
+  return request(`/api/links/${id}/restore`, { method: "PATCH" });
+}

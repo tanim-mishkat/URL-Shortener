@@ -10,3 +10,10 @@ Currently, two official plugins are available:
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+to be implemented:
+
+1> bulk Add/Remove tags UI.Remaining: replace the native confirm() used for hard delete with an in-app confirm modal (no browser alerts/confirms). 
+2> Folder polish – Counts/badges, drag-drop between folders, inline rename.
+3> Analytics 2.0 – Time-series, presets, referrers, geo/device, bot filtering.
+4> Browser extension – Quick shorten with tag/folder picker + clipboard auto-copy.

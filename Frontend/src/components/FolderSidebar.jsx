@@ -69,7 +69,7 @@ export default function FolderSidebar({ selectedFolderId, onSelect }) {
       alert("Folder name must be 50 characters or less");
       return;
     }
- 
+
     if (folders.some((f) => f.name.toLowerCase() === n.toLowerCase())) {
       alert("A folder with this name already exists");
       return;
@@ -98,7 +98,7 @@ export default function FolderSidebar({ selectedFolderId, onSelect }) {
       alert("Folder name must be 50 characters or less");
       return;
     }
-   
+
     if (
       folders.some(
         (f) => f._id !== editingId && f.name.toLowerCase() === n.toLowerCase()
@@ -259,6 +259,7 @@ export default function FolderSidebar({ selectedFolderId, onSelect }) {
                     {renderItem(
                       f._id,
                       f.name,
+                      f.count ?? 0,
                       undefined,
                       <svg
                         className="w-4 h-4"

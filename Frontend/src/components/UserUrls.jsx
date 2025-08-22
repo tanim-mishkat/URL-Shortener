@@ -1,69 +1,52 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { getAllUserUrls } from "../api/user.api";
+import React, {
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import {
+  useQuery,
+  useQueryClient,
+  useMutation,
+  useInfiniteQuery,
+} from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+
 import { getPublicBase } from "../utils/publicBase";
-import { queryClient } from "../main.jsx";
 import {
   updateLinkStatus,
   softDeleteLink,
   hardDeleteLink,
   moveLinkToFolder,
+  listLinks,
+  batchLinks,
+  restoreLink,
 } from "../api/shortUrl.api";
-import FolderSidebar from "./FolderSidebar.jsx";
-import TagEditor from "./TagEditor.jsx";
 import { listFolders } from "../api/folder.api";
 
-// Custom hook for debounced values
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
+import FolderSidebar from "./FolderSidebar.jsx";
+import { useToast } from "../context/ToastContext.js";
 
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
+import useDebounce from "../hooks/useDebounce.js";
+import { fuzzySearch, tagSearch } from "../utils/filtering.js";
 
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
+import NoUrlsCard from "./user-urls/NoUrlsCard.jsx";
+import UrlRow from "./user-urls/UrlRow.jsx";
+import UrlCard from "./user-urls/UrlCard.jsx";
+import BulkToolbar from "./user-urls/BulkToolbar.jsx";
+import MobileBulkToolbar from "./user-urls/MobileBulkToolbar.jsx";
 
-  return debouncedValue;
-};
-
-const fuzzySearch = (items, query, keys) => {
-  if (!query || query.trim() === "") return items;
-
-  const searchTerms = query.toLowerCase().trim().split(/\s+/);
-
-  return items.filter((item) => {
-    return searchTerms.every((term) => {
-      return keys.some((key) => {
-        const value = key.split(".").reduce((obj, prop) => obj?.[prop], item);
-        return value && value.toString().toLowerCase().includes(term);
-      });
-    });
-  });
-};
-
-const tagSearch = (items, tagQuery) => {
-  if (!tagQuery || tagQuery.trim() === "") return items;
-
-  const searchTag = tagQuery.toLowerCase().trim();
-
-  return items.filter((item) => {
-    const tags = Array.isArray(item.tags) ? item.tags : [];
-    return tags.some((tag) => tag.toLowerCase().includes(searchTag));
-  });
-};
+/* ----------------------------- */
 
 const UserUrls = () => {
   const qc = useQueryClient();
+  const { show } = useToast();
 
+  // Filters & UI state
   const [folderId, setFolderId] = useState(null);
   const [tagFilterInput, setTagFilterInput] = useState("");
   const [searchInput, setSearchInput] = useState("");
-
   const debouncedSearch = useDebounce(searchInput, 300);
   const debouncedTagFilter = useDebounce(tagFilterInput, 300);
 
@@ -71,6 +54,7 @@ const UserUrls = () => {
   const [actionLoading, setActionLoading] = useState(null);
   const [expandedTags, setExpandedTags] = useState({});
 
+  // Folders
   const { data: foldersData } = useQuery({
     queryKey: ["folders"],
     queryFn: listFolders,
@@ -78,19 +62,39 @@ const UserUrls = () => {
   });
   const folders = foldersData?.folders || [];
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["userUrls", { folderId }],
-    queryFn: () => getAllUserUrls({ folderId }),
-    refetchInterval: 3000,
-    staleTime: 0,
-    retry: false,
+  // Links (infinite pagination)
+  const {
+    data,
+    isLoading,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: [
+      "userUrls",
+      { folderId, search: debouncedSearch, tag: debouncedTagFilter },
+    ],
+    queryFn: ({ pageParam }) =>
+      listLinks({
+        limit: 50,
+        cursor: pageParam,
+        folderId,
+        q: debouncedSearch || undefined,
+        tags: debouncedTagFilter ? debouncedTagFilter : undefined,
+      }),
+    getNextPageParam: (last) => last?.nextCursor ?? undefined,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
-  const allUrls = data?.urls || [];
+  const EMPTY_PAGES = useRef([]).current;
+  const pages = data?.pages ?? EMPTY_PAGES;
+  const allUrls = useMemo(() => pages.flatMap((p) => p?.items ?? []), [pages]);
 
+  // Filtered list
   const filteredUrls = useMemo(() => {
     let filtered = allUrls;
-
     if (debouncedSearch) {
       filtered = fuzzySearch(filtered, debouncedSearch, [
         "fullUrl",
@@ -99,14 +103,54 @@ const UserUrls = () => {
         "tags",
       ]);
     }
-
     if (debouncedTagFilter) {
       filtered = tagSearch(filtered, debouncedTagFilter);
     }
-
     return filtered;
   }, [allUrls, debouncedSearch, debouncedTagFilter]);
 
+  // Selection
+  const [selected, setSelected] = useState(() => new Set());
+  const allSelectedOnPage =
+    filteredUrls.length > 0 && filteredUrls.every((u) => selected.has(u._id));
+  const hasSelection = selected.size > 0;
+
+  const toggle = useCallback((id) => {
+    setSelected((s) => {
+      const n = new Set(s);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  }, []);
+
+  const clearSel = useCallback(() => setSelected(new Set()), []);
+
+  const toggleAllOnPage = useCallback(() => {
+    setSelected((s) => {
+      const n = new Set(s);
+      if (allSelectedOnPage) {
+        filteredUrls.forEach((u) => n.delete(u._id));
+      } else {
+        filteredUrls.forEach((u) => n.add(u._id));
+      }
+      return n;
+    });
+  }, [allSelectedOnPage, filteredUrls]);
+
+  // Infinite-scroll sentinel
+  const loadMoreRef = useRef(null);
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    });
+    io.observe(loadMoreRef.current);
+    return () => io.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Actions
   const handleCopy = useCallback((id, shortUrl) => {
     const copiedUrl = `${getPublicBase().replace(/\/$/, "")}/${shortUrl}`;
     navigator.clipboard.writeText(copiedUrl);
@@ -114,18 +158,21 @@ const UserUrls = () => {
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
-  const doAction = useCallback(async (fn, id) => {
-    try {
-      setActionLoading(id);
-      await fn(id);
-      queryClient.invalidateQueries({ queryKey: ["userUrls"] });
-    } catch (e) {
-      console.error(e);
-      alert(e?.friendlyMessage || "Action failed");
-    } finally {
-      setActionLoading(null);
-    }
-  }, []);
+  const doAction = useCallback(
+    async (fn, id) => {
+      try {
+        setActionLoading(id);
+        await fn(id);
+        qc.invalidateQueries({ queryKey: ["userUrls"] });
+      } catch (e) {
+        console.error(e);
+        show(e?.friendlyMessage || "Action failed");
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [qc, show]
+  );
 
   const pause = useCallback(
     (id) => doAction((x) => updateLinkStatus(x, "paused"), id),
@@ -144,123 +191,64 @@ const UserUrls = () => {
     [doAction]
   );
 
-  const StatusPill = ({ status }) => {
-    const s = status || "active";
-    const config = {
-      active: {
-        bg: "bg-emerald-50",
-        border: "border-emerald-200",
-        text: "text-emerald-700",
-        dot: "bg-emerald-500",
-      },
-      paused: {
-        bg: "bg-amber-50",
-        border: "border-amber-200",
-        text: "text-amber-700",
-        dot: "bg-amber-500",
-      },
-      disabled: {
-        bg: "bg-slate-50",
-        border: "border-slate-200",
-        text: "text-slate-600",
-        dot: "bg-slate-400",
-      },
-    };
-    const label = s[0].toUpperCase() + s.slice(1);
-    return (
-      <div
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${config[s].bg} ${config[s].border} ${config[s].text}`}
-      >
-        <div className={`w-1.5 h-1.5 rounded-full ${config[s].dot}`}></div>
-        {label}
-      </div>
-    );
+  // Bulk mutate + Undo (for disable)
+  const mutateBatch = async (op, payload = {}) => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    await batchLinks(op, ids, payload);
+    qc.invalidateQueries({ queryKey: ["userUrls"] });
+
+    if (op === "disable" && ids.length === 1) {
+      const id = ids[0];
+      show(
+        ({ dismiss }) => (
+          <div className="flex items-center gap-3">
+            <span>Link disabled.</span>
+            <button
+              onClick={async () => {
+                await restoreLink(id);
+                qc.invalidateQueries({ queryKey: ["userUrls"] });
+                dismiss();
+              }}
+              className="underline"
+            >
+              Undo
+            </button>
+          </div>
+        ),
+        { duration: 5000 }
+      );
+    } else {
+      show("Batch action applied");
+    }
+    clearSel();
   };
 
-  const NoUrlsCard = () => (
-    <div className="flex-1">
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center">
-        <div className="max-w-sm mx-auto">
-          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <svg
-              className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.102m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-              />
-            </svg>
-          </div>
-          <h3 className="text-lg sm:text-xl font-semibold text-slate-900 mb-2">
-            {debouncedSearch || debouncedTagFilter
-              ? "No matching URLs found"
-              : "No URLs yet"}
-          </h3>
-          <p className="text-slate-500 text-sm sm:text-base">
-            {debouncedSearch || debouncedTagFilter
-              ? "Try adjusting your search or filter criteria"
-              : "Create your first shortened URL to get started tracking clicks and analytics!"}
-          </p>
-          {(debouncedSearch || debouncedTagFilter) && (
-            <button
-              onClick={() => {
-                setSearchInput("");
-                setTagFilterInput("");
-              }}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  // Move link into folder
-  const { mutate: moveFolder, isLoading: moving } = useMutation({
+  // Move link into folder (row-level)
+  const { mutate: moveFolder } = useMutation({
     mutationFn: ({ id, folderId }) => moveLinkToFolder(id, folderId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["userUrls"] });
     },
   });
+  const onMoveFolder = useCallback(
+    (id, folderId) => moveFolder({ id, folderId }),
+    [moveFolder]
+  );
 
-  const FolderSelect = ({ link }) => {
-    const current = link.folderId?._id || null;
-    return (
-      <select
-        className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        value={current ?? ""}
-        onChange={(e) => {
-          const v = e.target.value || null;
-          moveFolder({ id: link._id, folderId: v });
-        }}
-      >
-        <option value="">Unfiled</option>
-        {folders.map((f) => (
-          <option key={f._id} value={f._id}>
-            {f.name}
-          </option>
-        ))}
-      </select>
-    );
-  };
+  /* ----------------------------- */
+  // Render
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
         <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
           <div className="flex gap-6">
             <div className="w-64 hidden lg:block">
-              <div className="h-64 rounded-2xl bg-white border border-slate-200 animate-pulse" />
+              <div className="h-64 rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
             </div>
             <div className="flex-1">
-              <div className="h-80 rounded-2xl bg-white border border-slate-200 animate-pulse" />
+              <div className="h-80 rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
             </div>
           </div>
         </div>
@@ -270,48 +258,51 @@ const UserUrls = () => {
 
   if (error && error.status === 404) {
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
         <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12 flex gap-6">
           <div className="hidden lg:block">
             <FolderSidebar selectedFolderId={folderId} onSelect={setFolderId} />
           </div>
-          <NoUrlsCard />
+          <NoUrlsCard
+            hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+            onClear={() => {
+              setSearchInput("");
+              setTagFilterInput("");
+            }}
+          />
         </div>
       </div>
     );
   }
 
-  // Main 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 max-w-none mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
+      <div className="w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-12 max-w-none mx-auto">
         {/* Header & Filters */}
         <div className="mb-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-100 rounded-xl">
-              <svg
-                className="w-6 h-6 text-blue-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.102m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex w-2 h-2 rounded-full bg-indigo-500" />
+              <div>
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-transparent">
+                  Your URLs
+                </h2>
+                <p className="text-slate-600 text-sm sm:text-base">
+                  Organize with folders and tags • {filteredUrls.length} of{" "}
+                  {allUrls.length} URLs
+                </p>
+              </div>
+            </div>
+
+            <Link
+              to="/create"
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-white font-medium bg-gradient-to-br from-indigo-500 to-purple-600 hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-500/25"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
               </svg>
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900">
-                Your URLs
-              </h2>
-              <p className="text-slate-500 text-sm sm:text-base">
-                Organize with folders and tags • {filteredUrls.length} of{" "}
-                {allUrls.length} URLs
-              </p>
-            </div>
+              Create
+            </Link>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -320,7 +311,7 @@ const UserUrls = () => {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search URLs, domains, or content..."
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-sm bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors"
+                className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none"
               />
               <svg
                 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2"
@@ -338,7 +329,7 @@ const UserUrls = () => {
               {searchInput && (
                 <button
                   onClick={() => setSearchInput("")}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   <svg
                     className="w-4 h-4"
@@ -354,20 +345,21 @@ const UserUrls = () => {
                 </button>
               )}
             </div>
-            <div className="flex-1 sm:flex-none sm:w-48 relative">
+
+            <div className="flex-1 sm:flex-none sm:w-56 relative">
               <input
                 value={tagFilterInput}
                 onChange={(e) => setTagFilterInput(e.target.value)}
                 placeholder="Filter by tag..."
-                className="w-full pl-8 pr-4 py-3 rounded-xl border border-slate-200 text-sm bg-white focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-colors"
+                className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none"
               />
-              <span className="text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2 text-sm font-medium">
+              <span className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium">
                 #
               </span>
               {tagFilterInput && (
                 <button
                   onClick={() => setTagFilterInput("")}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 >
                   <svg
                     className="w-4 h-4"
@@ -385,27 +377,26 @@ const UserUrls = () => {
             </div>
           </div>
 
-          {/* Active filters indicator */}
           {(debouncedSearch || debouncedTagFilter) && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-slate-600">Active filters:</span>
               {debouncedSearch && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
                   Search: "{debouncedSearch}"
                   <button
                     onClick={() => setSearchInput("")}
-                    className="text-blue-500 hover:text-blue-700"
+                    className="text-indigo-500 hover:text-indigo-700"
                   >
                     ×
                   </button>
                 </span>
               )}
               {debouncedTagFilter && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
                   Tag: "#{debouncedTagFilter}"
                   <button
                     onClick={() => setTagFilterInput("")}
-                    className="text-green-500 hover:text-green-700"
+                    className="text-emerald-500 hover:text-emerald-700"
                   >
                     ×
                   </button>
@@ -416,461 +407,179 @@ const UserUrls = () => {
         </div>
 
         <div className="flex gap-6">
-          {/* Sidebar (folders) */}
+          {/* Sidebar */}
           <div className="hidden lg:block">
             <FolderSidebar selectedFolderId={folderId} onSelect={setFolderId} />
           </div>
 
-          {/* Main container */}
-          <div className="flex-1 bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            {/* Desktop Table */}
-            <div className="hidden lg:block overflow-x-auto">
+          {/* Main */}
+          <div className="flex-1 bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-visible">
+            {/* Desktop Table (widened: no horizontal slider) */}
+            <div className="hidden lg:block overflow-visible">
+              {hasSelection && (
+                <BulkToolbar
+                  count={selected.size}
+                  hasSelection={hasSelection}
+                  mutateBatch={mutateBatch}
+                  clearSel={clearSel}
+                  folders={folders}
+                  onPickMove={(fid) =>
+                    mutateBatch("moveToFolder", { folderId: fid })
+                  }
+                />
+              )}
+
               {filteredUrls.length === 0 ? (
                 <div className="p-8">
-                  <NoUrlsCard />
+                  <NoUrlsCard
+                    hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+                    onClear={() => {
+                      setSearchInput("");
+                      setTagFilterInput("");
+                    }}
+                  />
                 </div>
               ) : (
-                <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Original URL
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Short URL
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Folder
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Tags
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Status
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Clicks
-                      </th>
-                      <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredUrls.map((url) => {
-                      const fullShort = `${getPublicBase().replace(
-                        /\/$/,
-                        ""
-                      )}/${url.shortUrl}`;
-                      const isOpen = !!expandedTags[url._id];
-                      return (
-                        <tr
+                <>
+                  <table className="w-full">
+                    <thead className="bg-white/70 backdrop-blur-sm border-b border-slate-200/70">
+                      <tr>
+                        <th className="px-4 py-4">
+                          <input
+                            type="checkbox"
+                            checked={allSelectedOnPage}
+                            onChange={toggleAllOnPage}
+                          />
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Original URL
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Short URL
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Folder
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Tags
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Status
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Clicks
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUrls.map((url) => (
+                        <UrlRow
                           key={url._id}
-                          className="hover:bg-slate-50 transition-colors align-top"
-                        >
-                          <td className="px-6 py-4 max-w-xs">
-                            <p
-                              className="text-slate-900 font-medium truncate"
-                              title={url.fullUrl}
-                            >
-                              {url.fullUrl}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <Link
-                              to={fullShort}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors break-all"
-                            >
-                              {fullShort}
-                            </Link>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <FolderSelect link={url} />
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <button
-                              onClick={() =>
-                                setExpandedTags((s) => ({
-                                  ...s,
-                                  [url._id]: !s[url._id],
-                                }))
-                              }
-                              className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm hover:bg-slate-50 transition-colors"
-                            >
-                              {isOpen ? "Hide" : "Edit"} tags
-                            </button>
-                            {isOpen && (
-                              <div className="mt-3 text-left">
-                                <TagEditor link={url} />
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <StatusPill status={url.status} />
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="inline-flex items-center px-3 py-1.5 bg-slate-100 rounded-lg">
-                              <span className="text-slate-800 font-semibold text-sm">
-                                {(url.clicks ?? 0).toLocaleString()}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <div className="flex items-center justify-center gap-2 flex-wrap">
-                              <Link
-                                to={`/stats/${url._id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
-                              >
-                                Stats
-                              </Link>
+                          url={url}
+                          folders={folders}
+                          onMoveFolder={onMoveFolder}
+                          isSelected={selected.has(url._id)}
+                          onToggleSelect={() => toggle(url._id)}
+                          isTagsOpen={!!expandedTags[url._id]}
+                          onToggleTags={() =>
+                            setExpandedTags((s) => ({
+                              ...s,
+                              [url._id]: !s[url._id],
+                            }))
+                          }
+                          actionLoading={actionLoading === url._id}
+                          copiedId={copiedId}
+                          onCopy={() => handleCopy(url._id, url.shortUrl)}
+                          onPause={() => pause(url._id)}
+                          onResume={() => resume(url._id)}
+                          onDisable={() => disable(url._id)}
+                          onHardDelete={() => hardDelete(url._id)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
 
-                              {url.status === "paused" ? (
-                                <button
-                                  onClick={() => resume(url._id)}
-                                  disabled={actionLoading === url._id}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                                >
-                                  {actionLoading === url._id ? "..." : "Resume"}
-                                </button>
-                              ) : url.status === "disabled" ? (
-                                <button
-                                  onClick={() => resume(url._id)}
-                                  disabled={actionLoading === url._id}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                                >
-                                  {actionLoading === url._id ? "..." : "Enable"}
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => pause(url._id)}
-                                  disabled={actionLoading === url._id}
-                                  className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 transition-colors disabled:opacity-50"
-                                >
-                                  {actionLoading === url._id ? "..." : "Pause"}
-                                </button>
-                              )}
-
-                              {url.status !== "disabled" && (
-                                <button
-                                  onClick={() => disable(url._id)}
-                                  disabled={actionLoading === url._id}
-                                  className="px-3 py-1.5 rounded-lg bg-slate-500 text-white text-sm font-medium hover:bg-slate-600 transition-colors disabled:opacity-50"
-                                >
-                                  {actionLoading === url._id
-                                    ? "..."
-                                    : "Disable"}
-                                </button>
-                              )}
-
-                              <button
-                                onClick={() => hardDelete(url._id)}
-                                disabled={actionLoading === url._id}
-                                className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
-                              >
-                                {actionLoading === url._id ? "..." : "Delete"}
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  handleCopy(url._id, url.shortUrl)
-                                }
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                                  copiedId === url._id
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
-                                }`}
-                              >
-                                {copiedId === url._id ? "Copied!" : "Copy"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                  {/* Infinite scroll sentinel */}
+                  <div
+                    ref={loadMoreRef}
+                    className="p-4 text-center text-slate-400"
+                  >
+                    {isFetchingNextPage
+                      ? "Loading…"
+                      : hasNextPage
+                      ? "Scroll to load more"
+                      : "End"}
+                  </div>
+                </>
               )}
             </div>
-
-            {/* Mobile/Tablet Cards */}
+            {/* Mobile/Tablet Cards + inline bulk toolbar */}
             <div className="lg:hidden">
+              <div className="px-3 pt-3">
+                <MobileBulkToolbar
+                  inline
+                  count={selected.size}
+                  hasSelection={hasSelection}
+                  mutateBatch={mutateBatch}
+                  clearSel={clearSel}
+                  folders={folders}
+                  onPickMove={(fid) =>
+                    mutateBatch("moveToFolder", { folderId: fid })
+                  }
+                  allSelectedOnPage={allSelectedOnPage}
+                  toggleAllOnPage={toggleAllOnPage}
+                />
+              </div>
               {filteredUrls.length === 0 ? (
                 <div className="p-6">
-                  <NoUrlsCard />
+                  <NoUrlsCard
+                    hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+                    onClear={() => {
+                      setSearchInput("");
+                      setTagFilterInput("");
+                    }}
+                  />
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {filteredUrls.map((url) => {
-                    const fullShort = `${getPublicBase().replace(/\/$/, "")}/${
-                      url.shortUrl
-                    }`;
-                    const isOpen = !!expandedTags[url._id];
-                    return (
-                      <div key={url._id} className="p-4 sm:p-6 space-y-4">
-                        {/* Status and Clicks Row */}
-                        <div className="flex items-center justify-between">
-                          <StatusPill status={url.status} />
-                          <div className="inline-flex items-center px-3 py-1.5 bg-slate-100 rounded-lg">
-                            <span className="text-slate-800 font-semibold text-sm">
-                              {(url.clicks ?? 0).toLocaleString()} clicks
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* URLs Section */}
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                              ORIGINAL URL
-                            </label>
-                            <div className="p-3 bg-slate-50 rounded-lg">
-                              <p
-                                className="text-slate-900 text-sm break-all"
-                                title={url.fullUrl}
-                              >
-                                {url.fullUrl}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                              SHORT URL
-                            </label>
-                            <Link
-                              to={fullShort}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block p-3 bg-blue-50 rounded-lg text-blue-600 hover:text-blue-700 font-medium hover:underline transition-colors text-sm break-all"
-                            >
-                              {fullShort}
-                            </Link>
-                          </div>
-                        </div>
-
-                        {/* Folder and Tags Row */}
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex-1">
-                            <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                              FOLDER
-                            </label>
-                            <FolderSelect link={url} />
-                          </div>
-                          <div className="flex-shrink-0">
-                            <button
-                              onClick={() =>
-                                setExpandedTags((s) => ({
-                                  ...s,
-                                  [url._id]: !s[url._id],
-                                }))
-                              }
-                              className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium hover:bg-slate-50 transition-colors"
-                            >
-                              {isOpen ? "Hide" : "Edit"} tags
-                            </button>
-                          </div>
-                        </div>
-
-                        {isOpen && (
-                          <div className="pt-2">
-                            <TagEditor link={url} />
-                          </div>
-                        )}
-
-                        {/* Primary Actions */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <Link
-                            to={`/stats/${url._id}`}
-                            target="_blank"
-                            className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors text-sm"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
-                              <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
-                            </svg>
-                            Stats
-                          </Link>
-
-                          {url.status === "paused" ? (
-                            <button
-                              onClick={() => resume(url._id)}
-                              disabled={actionLoading === url._id}
-                              className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 text-sm"
-                            >
-                              {actionLoading === url._id ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              ) : (
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              )}
-                              Resume
-                            </button>
-                          ) : url.status === "disabled" ? (
-                            <button
-                              onClick={() => resume(url._id)}
-                              disabled={actionLoading === url._id}
-                              className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 text-sm"
-                            >
-                              {actionLoading === url._id ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              ) : (
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              )}
-                              Enable
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => pause(url._id)}
-                              disabled={actionLoading === url._id}
-                              className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors disabled:opacity-50 text-sm"
-                            >
-                              {actionLoading === url._id ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              ) : (
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              )}
-                              Pause
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Secondary Actions */}
-                        <div className="grid grid-cols-3 gap-2">
-                          <button
-                            onClick={() => handleCopy(url._id, url.shortUrl)}
-                            className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg font-medium transition-colors text-sm ${
-                              copiedId === url._id
-                                ? "bg-emerald-600 text-white"
-                                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            }`}
-                          >
-                            {copiedId === url._id ? (
-                              <>
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                Copied
-                              </>
-                            ) : (
-                              <>
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
-                                  <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
-                                </svg>
-                                Copy
-                              </>
-                            )}
-                          </button>
-
-                          {url.status !== "disabled" && (
-                            <button
-                              onClick={() => disable(url._id)}
-                              disabled={actionLoading === url._id}
-                              className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-slate-500 text-white font-medium hover:bg-slate-600 transition-colors disabled:opacity-50 text-sm"
-                            >
-                              {actionLoading === url._id ? (
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              ) : (
-                                <>
-                                  <svg
-                                    className="w-4 h-4"
-                                    fill="currentColor"
-                                    viewBox="0 0 20 20"
-                                  >
-                                    <path
-                                      fillRule="evenodd"
-                                      d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                                      clipRule="evenodd"
-                                    />
-                                  </svg>
-                                  Disable
-                                </>
-                              )}
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => hardDelete(url._id)}
-                            disabled={actionLoading === url._id}
-                            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-50 text-sm"
-                          >
-                            {actionLoading === url._id ? (
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                              <>
-                                <svg
-                                  className="w-4 h-4"
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                                Delete
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {filteredUrls.map((url) => (
+                    <UrlCard
+                      key={url._id}
+                      url={url}
+                      folders={folders}
+                      onMoveFolder={onMoveFolder}
+                      actionLoading={actionLoading === url._id}
+                      copiedId={copiedId}
+                      onCopy={() => handleCopy(url._id, url.shortUrl)}
+                      onPause={() => pause(url._id)}
+                      onResume={() => resume(url._id)}
+                      onDisable={() => disable(url._id)}
+                      onHardDelete={() => hardDelete(url._id)}
+                      isTagsOpen={!!expandedTags[url._id]}
+                      onToggleTags={() =>
+                        setExpandedTags((s) => ({
+                          ...s,
+                          [url._id]: !s[url._id],
+                        }))
+                      }
+                      isSelected={selected.has(url._id)}
+                      onToggleSelect={() => toggle(url._id)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* Sentinel for infinite scroll (outside table for mobile) */}
+        <div
+          ref={loadMoreRef}
+          className="lg:hidden p-4 text-center text-slate-400"
+        />
       </div>
     </div>
   );
