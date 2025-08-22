@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const folderSchema = new Schema(
     {
         name: { type: String, required: true, trim: true, maxlength: 40 },
-        user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+        user: { type: Schema.Types.ObjectId, ref: "user", required: true },
     },
     { timestamps: true }
 );

@@ -1,11 +1,16 @@
 import {
     createFolderService,
     listFoldersService,
+    listFoldersWithCountsService,
     renameFolderService,
     deleteFolderService,
 } from "../services/folder.service.js";
 
 export const listFoldersController = async (req, res) => {
+    if (req.query.withCounts === "1") {
+        const rows = await listFoldersWithCountsService(req.user._id);
+        return res.json({ folders: rows });
+    }
     const rows = await listFoldersService(req.user._id);
     return res.json({ folders: rows });
 };

@@ -14,7 +14,7 @@ export const attachUserIfPresent = async (req, _res, next) => {
 
     try {
         const decoded = verifyToken(token);
-        const userId = typeof decoded === "string" ? decoded : decoded?.id || decoded?._id;
+        const userId = decoded.id || decoded._id;
         if (!userId) return next();
 
         const user = await findUserById(userId);

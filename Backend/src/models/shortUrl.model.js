@@ -32,5 +32,6 @@ const shortUrlSchema = new mongoose.Schema(
 shortUrlSchema.index({ user: 1, status: 1 });
 shortUrlSchema.index({ user: 1, folderId: 1, createdAt: -1 });
 shortUrlSchema.index({ user: 1, tags: 1 });
+shortUrlSchema.index({ user: 1, fullUrl: 1 });
 
 export default mongoose.model("shortUrl", shortUrlSchema);
