@@ -53,7 +53,11 @@ const UserUrls = () => {
   const [copiedId, setCopiedId] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [expandedTags, setExpandedTags] = useState({});
-
+  const [confirmDel, setConfirmDel] = useState({
+    open: false,
+    id: null,
+    busy: false,
+  });
   // Folders
   const { data: foldersData } = useQuery({
     queryKey: ["folders"],
@@ -178,18 +182,26 @@ const UserUrls = () => {
     (id) => doAction((x) => updateLinkStatus(x, "paused"), id),
     [doAction]
   );
+
   const resume = useCallback(
     (id) => doAction((x) => updateLinkStatus(x, "active"), id),
     [doAction]
   );
+
   const disable = useCallback((id) => doAction(softDeleteLink, id), [doAction]);
-  const hardDelete = useCallback(
-    (id) => {
-      if (!confirm("This will permanently delete the link. Continue?")) return;
-      return doAction(hardDeleteLink, id);
-    },
-    [doAction]
-  );
+
+  const hardDelete = useCallback((id) => {
+    setConfirmDel({ open: true, id, busy: false });
+  }, []);
+
+  const handleConfirmDelete = async () => {
+    setConfirmDel((s) => ({ ...s, busy: true }));
+    try {
+      await doAction((x) => hardDeleteLink(x), confirmDel.id);
+    } finally {
+      setConfirmDel({ open: false, id: null, busy: false });
+    }
+  };
 
   // Bulk mutate + Undo (for disable)
   const mutateBatch = async (op, payload = {}) => {
