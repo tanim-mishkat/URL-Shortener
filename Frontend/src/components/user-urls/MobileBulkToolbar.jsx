@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import TagBulkModal from "./TagBulkModal.jsx";
-import ConfirmModal from "../modals/ConfirmModal.jsx";
+import TagBulkModal from "./TagBulkUrl.jsx";
+import ConfirmModal from "../modals/ConfirmModals.jsx";
 
 export default function MobileBulkToolbar({
   count,

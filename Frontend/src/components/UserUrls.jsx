@@ -154,6 +154,27 @@ const UserUrls = () => {
     return () => io.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  +(
+    // Auto-scroll the page while dragging near top/bottom
+    useEffect(() => {
+      const EDGE = 80; // px from top/bottom that activates scrolling
+      const SPEED = 24; // max px per tick
+      const onDragOver = (e) => {
+        const y = e.clientY;
+        const h = window.innerHeight;
+        if (y < EDGE) {
+          const d = Math.ceil(((EDGE - y) / EDGE) * SPEED);
+          window.scrollBy(0, -d);
+        } else if (y > h - EDGE) {
+          const d = Math.ceil(((y - (h - EDGE)) / EDGE) * SPEED);
+          window.scrollBy(0, d);
+        }
+      };
+      window.addEventListener("dragover", onDragOver, { passive: true });
+      return () => window.removeEventListener("dragover", onDragOver);
+    }, [])
+  );
+
   // Actions
   const handleCopy = useCallback((id, shortUrl) => {
     const copiedUrl = `${getPublicBase().replace(/\/$/, "")}/${shortUrl}`;
@@ -168,6 +189,7 @@ const UserUrls = () => {
         setActionLoading(id);
         await fn(id);
         qc.invalidateQueries({ queryKey: ["userUrls"] });
+        qc.invalidateQueries({ queryKey: ["folders"] });
       } catch (e) {
         console.error(e);
         show(e?.friendlyMessage || "Action failed");
@@ -203,12 +225,19 @@ const UserUrls = () => {
     }
   };
 
+  // Drop handler passed into FolderSidebar
+  const handleDropMove = (ids, folderId) => {
+    mutateBatch("moveToFolder", { folderId }, ids);
+  };
   // Bulk mutate + Undo (for disable)
-  const mutateBatch = async (op, payload = {}) => {
-    const ids = Array.from(selected);
+  // mutateBatch: allow override of ids (for drag-drop)
+
+  const mutateBatch = async (op, payload = {}, idsOverride = null) => {
+    const ids = idsOverride ?? Array.from(selected);
     if (!ids.length) return;
     await batchLinks(op, ids, payload);
     qc.invalidateQueries({ queryKey: ["userUrls"] });
+    qc.invalidateQueries({ queryKey: ["folders"] });
 
     if (op === "disable" && ids.length === 1) {
       const id = ids[0];
@@ -220,6 +249,7 @@ const UserUrls = () => {
               onClick={async () => {
                 await restoreLink(id);
                 qc.invalidateQueries({ queryKey: ["userUrls"] });
+                qc.invalidateQueries({ queryKey: ["folders"] });
                 dismiss();
               }}
               className="underline"
@@ -241,6 +271,7 @@ const UserUrls = () => {
     mutationFn: ({ id, folderId }) => moveLinkToFolder(id, folderId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["userUrls"] });
+      qc.invalidateQueries({ queryKey: ["folders"] });
     },
   });
   const onMoveFolder = useCallback(
@@ -273,7 +304,11 @@ const UserUrls = () => {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
         <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12 flex gap-6">
           <div className="hidden lg:block">
-            <FolderSidebar selectedFolderId={folderId} onSelect={setFolderId} />
+            <FolderSidebar
+              selectedFolderId={folderId}
+              onSelect={setFolderId}
+              onDropMove={handleDropMove}
+            />
           </div>
           <NoUrlsCard
             hasFilters={!!(debouncedSearch || debouncedTagFilter)}
@@ -421,7 +456,11 @@ const UserUrls = () => {
         <div className="flex gap-6">
           {/* Sidebar */}
           <div className="hidden lg:block">
-            <FolderSidebar selectedFolderId={folderId} onSelect={setFolderId} />
+            <FolderSidebar
+              selectedFolderId={folderId}
+              onSelect={setFolderId}
+              onDropMove={handleDropMove}
+            />
           </div>
 
           {/* Main */}
@@ -486,6 +525,7 @@ const UserUrls = () => {
                         </th>
                       </tr>
                     </thead>
+                    {/* ---------- Desktop table rows: pass selectedIds ---------- */}
                     <tbody className="divide-y divide-slate-100">
                       {filteredUrls.map((url) => (
                         <UrlRow
@@ -509,6 +549,7 @@ const UserUrls = () => {
                           onResume={() => resume(url._id)}
                           onDisable={() => disable(url._id)}
                           onHardDelete={() => hardDelete(url._id)}
+                          selectedIds={Array.from(selected)}
                         />
                       ))}
                     </tbody>
@@ -557,6 +598,7 @@ const UserUrls = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
+                  {/* ---------- Mobile cards: pass selectedIds ---------- */}
                   {filteredUrls.map((url) => (
                     <UrlCard
                       key={url._id}
@@ -579,6 +621,7 @@ const UserUrls = () => {
                       }
                       isSelected={selected.has(url._id)}
                       onToggleSelect={() => toggle(url._id)}
+                      selectedIds={Array.from(selected)} // << NEW
                     />
                   ))}
                 </div>

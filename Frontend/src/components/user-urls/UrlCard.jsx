@@ -20,11 +20,19 @@ export default function UrlCard({
   onToggleTags,
   isSelected,
   onToggleSelect,
+  selectedIds = [],
 }) {
   const fullShort = `${getPublicBase().replace(/\/$/, "")}/${url.shortUrl}`;
-
+  const onDragStart = (e) => {
+    const ids = isSelected && selectedIds.length ? selectedIds : [url._id];
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ linkIds: ids })
+    );
+    e.dataTransfer.effectAllowed = "move";
+  };
   return (
-    <div className="p-4 sm:p-6 space-y-4">
+    <div className="p-4 sm:p-6 space-y-4" draggable onDragStart={onDragStart}>
       {/* Header row with selection + status + clicks */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

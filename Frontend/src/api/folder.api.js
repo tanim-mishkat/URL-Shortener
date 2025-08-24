@@ -4,6 +4,7 @@ export function listFolders() {
     return request("/api/folders?withCounts=1");
 }
 
+
 export function createFolder(name) {
     return request("/api/folders", {
         method: "POST",

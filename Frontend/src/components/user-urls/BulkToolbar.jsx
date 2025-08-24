@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import TagBulkModal from "./TagBulkModal.jsx";
-import ConfirmModal from "../modals/ConfirmModal.jsx";
+import TagBulkModal from "./TagBulkUrl.jsx";
+import ConfirmModal from "../modals/ConfirmModals.jsx";
 
 export default function BulkToolbar({
   count,
@@ -93,7 +93,6 @@ export default function BulkToolbar({
           </div>
         </div>
       </div>
-
       {/* Modals */}
       <TagBulkModal
         open={showTags}
@@ -108,13 +107,11 @@ export default function BulkToolbar({
           mutateBatch("removeTags", { tags });
         }}
       />
-
+      {/* Bulk delete confirm modal */}
       <ConfirmModal
         open={confirmOpen}
         title="Delete selected links?"
-        message={`This will permanently delete ${count} selected link${
-          count > 1 ? "s" : ""
-        }. This cannot be undone.`}
+        message="This will permanently delete the selected links. This cannot be undone."
         confirmText="Delete"
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => {

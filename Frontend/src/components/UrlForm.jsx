@@ -31,7 +31,7 @@ const UrlForm = () => {
             ? trimmed
             : `https://${trimmed}`;
           const u = new URL(withProto);
-          u.hash = ""; 
+          u.hash = "";
           return u.toString();
         } catch {
           throw { friendlyMessage: "Please enter a valid URL." };
@@ -43,7 +43,8 @@ const UrlForm = () => {
 
       // Refresh the user URLs list without aggressive polling
       await queryClient.invalidateQueries({ queryKey: ["userUrls"] });
-
+      await queryClient.invalidateQueries({ queryKey: ["folders"] });
+      
       setError("");
       setCustomSlug("");
       setUrl("https://");

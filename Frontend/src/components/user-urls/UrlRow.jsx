@@ -7,6 +7,7 @@ import { getPublicBase } from "../../utils/publicBase";
 
 export default function UrlRow({
   url,
+  selectedIds = [],
   isSelected,
   onToggleSelect,
   isTagsOpen,
@@ -22,9 +23,20 @@ export default function UrlRow({
   onHardDelete,
 }) {
   const fullShort = `${getPublicBase().replace(/\/$/, "")}/${url.shortUrl}`;
-
+  const onDragStart = (e) => {
+    const ids = isSelected && selectedIds.length ? selectedIds : [url._id];
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({ linkIds: ids })
+    );
+    e.dataTransfer.effectAllowed = "move";
+  };
   return (
-    <tr className="hover:bg-slate-50/70 transition-colors align-top">
+    <tr
+      className="hover:bg-slate-50/70 transition-colors align-top"
+      draggable
+      onDragStart={onDragStart}
+    >
       <td className="px-4 py-4">
         <input type="checkbox" checked={isSelected} onChange={onToggleSelect} />
       </td>
