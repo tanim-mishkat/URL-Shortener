@@ -1,7 +1,7 @@
 import axios, { isAxiosError } from "axios";
 
 const axiosInstance = axios.create({
-    baseURL: "VITE_API_BASE/",
+    baseURL: import.meta.env.VITE_API_BASE + "/",
     timeout: 10000, // 10s
     withCredentials: true
 });
