@@ -1,6 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
 import { rootRoute } from "./routeTree";
-import StatsPage from "../pages/StatsPage";
+import StatsPage from "../pages/StatsPage.jsx";
 import { checkAuth } from "../utils/helper";
 
 export const statsRoute = createRoute({
