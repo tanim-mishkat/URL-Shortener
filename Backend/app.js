@@ -47,8 +47,9 @@ const corsConfig = {
 };
 
 app.use(cors(corsConfig));
-// Explicit preflight handler
-app.options("*", cors(corsConfig));
+
+// (optional) Explicit preflight handler; regex avoids path-to-regexp error
+app.options(/.*/, cors(corsConfig));
 
 /* ---------- Parsers & cookies ---------- */
 app.use(cookieParser());
