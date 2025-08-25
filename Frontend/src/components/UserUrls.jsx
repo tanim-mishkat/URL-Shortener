@@ -1,64 +1,41 @@
-import React, {
-  useMemo,
-  useState,
-  useEffect,
-  useCallback,
-  useRef,
-} from "react";
-import {
-  useQuery,
-  useQueryClient,
-  useMutation,
-  useInfiniteQuery,
-} from "@tanstack/react-query";
+import React, { useMemo, useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Plus, Search, Hash, X, Filter, Loader2 } from "lucide-react";
 
-import { getPublicBase } from "../utils/publicBase";
-import {
-  updateLinkStatus,
-  softDeleteLink,
-  hardDeleteLink,
-  moveLinkToFolder,
-  listLinks,
-  batchLinks,
-  restoreLink,
-} from "../api/shortUrl.api";
 import { listFolders } from "../api/folder.api";
+import useDebounce from "../hooks/useDebounce";
+import useLinksData from "../hooks/useLinksData";
+import useSelection from "../hooks/useSelection";
+import useDragEdgeScroll from "../hooks/useDragEdgeScroll";
+import useSentinelLoaders from "../hooks/useSentinelLoaders";
+import useLinkActions from "../hooks/useLinkActions.jsx";
+import { useToast } from "../context/ToastContext";
 
 import FolderSidebar from "./FolderSidebar.jsx";
-import { useToast } from "../context/ToastContext.js";
-
-import useDebounce from "../hooks/useDebounce.js";
-import { fuzzySearch, tagSearch } from "../utils/filtering.js";
-
 import NoUrlsCard from "./user-urls/NoUrlsCard.jsx";
 import UrlRow from "./user-urls/UrlRow.jsx";
 import UrlCard from "./user-urls/UrlCard.jsx";
 import BulkToolbar from "./user-urls/BulkToolbar.jsx";
 import MobileBulkToolbar from "./user-urls/MobileBulkToolbar.jsx";
-
-/* ----------------------------- */
+import ConfirmModal from "./modals/ConfirmModals.jsx";
 
 const UserUrls = () => {
   const qc = useQueryClient();
   const { show } = useToast();
 
-  // Filters & UI state
   const [folderId, setFolderId] = useState(null);
   const [tagFilterInput, setTagFilterInput] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const debouncedSearch = useDebounce(searchInput, 300);
-  const debouncedTagFilter = useDebounce(tagFilterInput, 300);
 
-  const [copiedId, setCopiedId] = useState(null);
-  const [actionLoading, setActionLoading] = useState(null);
-  const [expandedTags, setExpandedTags] = useState({});
-  const [confirmDel, setConfirmDel] = useState({
-    open: false,
-    id: null,
-    busy: false,
-  });
-  // Folders
+  // Longer debounce for better typing experience
+  const debouncedSearch = useDebounce(searchInput, 800);
+  const debouncedTag = useDebounce(tagFilterInput, 600);
+
+  // Show loading indicator when user is typing but debounce hasn't fired yet
+  const isSearching = searchInput !== debouncedSearch;
+  const isTagFiltering = tagFilterInput !== debouncedTag;
+
   const { data: foldersData } = useQuery({
     queryKey: ["folders"],
     queryFn: listFolders,
@@ -66,232 +43,73 @@ const UserUrls = () => {
   });
   const folders = foldersData?.folders || [];
 
-  // Links (infinite pagination)
   const {
-    data,
+    allUrls,
+    filteredUrls,
     isLoading,
     error,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: [
-      "userUrls",
-      { folderId, search: debouncedSearch, tag: debouncedTagFilter },
-    ],
-    queryFn: ({ pageParam }) =>
-      listLinks({
-        limit: 50,
-        cursor: pageParam,
-        folderId,
-        q: debouncedSearch || undefined,
-        tags: debouncedTagFilter ? debouncedTagFilter : undefined,
-      }),
-    getNextPageParam: (last) => last?.nextCursor ?? undefined,
-    refetchOnWindowFocus: false,
-    retry: 1,
+  } = useLinksData({
+    folderId,
+    search: debouncedSearch,
+    tag: debouncedTag,
   });
 
-  const EMPTY_PAGES = useRef([]).current;
-  const pages = data?.pages ?? EMPTY_PAGES;
-  const allUrls = useMemo(() => pages.flatMap((p) => p?.items ?? []), [pages]);
+  const {
+    selected,
+    toggle,
+    clearSel,
+    toggleAllOnPage,
+    allSelectedOnPage,
+    hasSelection,
+  } = useSelection(filteredUrls);
 
-  // Filtered list
-  const filteredUrls = useMemo(() => {
-    let filtered = allUrls;
-    if (debouncedSearch) {
-      filtered = fuzzySearch(filtered, debouncedSearch, [
-        "fullUrl",
-        "shortUrl",
-        "folderId.name",
-        "tags",
-      ]);
-    }
-    if (debouncedTagFilter) {
-      filtered = tagSearch(filtered, debouncedTagFilter);
-    }
-    return filtered;
-  }, [allUrls, debouncedSearch, debouncedTagFilter]);
-
-  // Selection
-  const [selected, setSelected] = useState(() => new Set());
-  const allSelectedOnPage =
-    filteredUrls.length > 0 && filteredUrls.every((u) => selected.has(u._id));
-  const hasSelection = selected.size > 0;
-
-  const toggle = useCallback((id) => {
-    setSelected((s) => {
-      const n = new Set(s);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
+  // Track which items have their TagEditor open
+  const [openTagEditors, setOpenTagEditors] = useState(new Set());
+  const isTagOpen = (id) => openTagEditors.has(id);
+  const toggleTagOpen = (id) =>
+    setOpenTagEditors((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
     });
-  }, []);
+  const closeAllTags = () => setOpenTagEditors(new Set());
 
-  const clearSel = useCallback(() => setSelected(new Set()), []);
-
-  const toggleAllOnPage = useCallback(() => {
-    setSelected((s) => {
-      const n = new Set(s);
-      if (allSelectedOnPage) {
-        filteredUrls.forEach((u) => n.delete(u._id));
-      } else {
-        filteredUrls.forEach((u) => n.add(u._id));
-      }
-      return n;
-    });
-  }, [allSelectedOnPage, filteredUrls]);
-
-  // Infinite-scroll sentinel
-  const loadMoreRef = useRef(null);
+  // Close editors when folder or filters change
   useEffect(() => {
-    if (!loadMoreRef.current) return;
-    const io = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    });
-    io.observe(loadMoreRef.current);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    closeAllTags();
+  }, [folderId, debouncedSearch, debouncedTag]);
 
-  +(
-    // Auto-scroll the page while dragging near top/bottom
-    useEffect(() => {
-      const EDGE = 80; // px from top/bottom that activates scrolling
-      const SPEED = 24; // max px per tick
-      const onDragOver = (e) => {
-        const y = e.clientY;
-        const h = window.innerHeight;
-        if (y < EDGE) {
-          const d = Math.ceil(((EDGE - y) / EDGE) * SPEED);
-          window.scrollBy(0, -d);
-        } else if (y > h - EDGE) {
-          const d = Math.ceil(((y - (h - EDGE)) / EDGE) * SPEED);
-          window.scrollBy(0, d);
-        }
-      };
-      window.addEventListener("dragover", onDragOver, { passive: true });
-      return () => window.removeEventListener("dragover", onDragOver);
-    }, [])
-  );
-
-  // Actions
-  const handleCopy = useCallback((id, shortUrl) => {
-    const copiedUrl = `${getPublicBase().replace(/\/$/, "")}/${shortUrl}`;
-    navigator.clipboard.writeText(copiedUrl);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  }, []);
-
-  const doAction = useCallback(
-    async (fn, id) => {
-      try {
-        setActionLoading(id);
-        await fn(id);
-        qc.invalidateQueries({ queryKey: ["userUrls"] });
-        qc.invalidateQueries({ queryKey: ["folders"] });
-      } catch (e) {
-        console.error(e);
-        show(e?.friendlyMessage || "Action failed");
-      } finally {
-        setActionLoading(null);
-      }
-    },
-    [qc, show]
-  );
-
-  const pause = useCallback(
-    (id) => doAction((x) => updateLinkStatus(x, "paused"), id),
-    [doAction]
-  );
-
-  const resume = useCallback(
-    (id) => doAction((x) => updateLinkStatus(x, "active"), id),
-    [doAction]
-  );
-
-  const disable = useCallback((id) => doAction(softDeleteLink, id), [doAction]);
-
-  const hardDelete = useCallback((id) => {
-    setConfirmDel({ open: true, id, busy: false });
-  }, []);
-
-  const handleConfirmDelete = async () => {
-    setConfirmDel((s) => ({ ...s, busy: true }));
-    try {
-      await doAction((x) => hardDeleteLink(x), confirmDel.id);
-    } finally {
-      setConfirmDel({ open: false, id: null, busy: false });
-    }
-  };
-
-  // Drop handler passed into FolderSidebar
-  const handleDropMove = (ids, folderId) => {
-    mutateBatch("moveToFolder", { folderId }, ids);
-  };
-  // Bulk mutate + Undo (for disable)
-  // mutateBatch: allow override of ids (for drag-drop)
-
-  const mutateBatch = async (op, payload = {}, idsOverride = null) => {
-    const ids = idsOverride ?? Array.from(selected);
-    if (!ids.length) return;
-    await batchLinks(op, ids, payload);
-    qc.invalidateQueries({ queryKey: ["userUrls"] });
-    qc.invalidateQueries({ queryKey: ["folders"] });
-
-    if (op === "disable" && ids.length === 1) {
-      const id = ids[0];
-      show(
-        ({ dismiss }) => (
-          <div className="flex items-center gap-3">
-            <span>Link disabled.</span>
-            <button
-              onClick={async () => {
-                await restoreLink(id);
-                qc.invalidateQueries({ queryKey: ["userUrls"] });
-                qc.invalidateQueries({ queryKey: ["folders"] });
-                dismiss();
-              }}
-              className="underline"
-            >
-              Undo
-            </button>
-          </div>
-        ),
-        { duration: 5000 }
-      );
-    } else {
-      show("Batch action applied");
-    }
-    clearSel();
-  };
-
-  // Move link into folder (row-level)
-  const { mutate: moveFolder } = useMutation({
-    mutationFn: ({ id, folderId }) => moveLinkToFolder(id, folderId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["userUrls"] });
-      qc.invalidateQueries({ queryKey: ["folders"] });
-    },
+  useDragEdgeScroll();
+  const { tableSentinelRef, mobileSentinelRef } = useSentinelLoaders({
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
   });
-  const onMoveFolder = useCallback(
-    (id, folderId) => moveFolder({ id, folderId }),
-    [moveFolder]
-  );
 
-  /* ----------------------------- */
-  // Render
+  const actions = useLinkActions({ qc, show, selected, clearSel });
+
+  const countsText = useMemo(() => {
+    if (isSearching || isTagFiltering) {
+      return `Searching ${allUrls.length} URLs...`;
+    }
+    return `${filteredUrls.length} of ${allUrls.length} URLs`;
+  }, [filteredUrls.length, allUrls.length, isSearching, isTagFiltering]);
+
+  const hasActiveFilters = !!(debouncedSearch || debouncedTag);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
-        <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
-          <div className="flex gap-6">
-            <div className="w-64 hidden lg:block">
-              <div className="h-64 rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
+      <div className="bg-gradient-to-br from-slate-50/50 via-indigo-50/30 to-purple-50/50">
+        <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+          <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
+            <div className="w-full lg:w-64 hidden lg:block">
+              <div className="h-48 lg:h-64 rounded-2xl sm:rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
             </div>
             <div className="flex-1">
-              <div className="h-80 rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
+              <div className="h-64 lg:h-80 rounded-2xl sm:rounded-3xl bg-white/70 backdrop-blur-sm border border-slate-200 animate-pulse" />
             </div>
           </div>
         </div>
@@ -301,17 +119,17 @@ const UserUrls = () => {
 
   if (error && error.status === 404) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
-        <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12 flex gap-6">
+      <div className="bg-gradient-to-br from-slate-50/50 via-indigo-50/30 to-purple-50/50">
+        <div className="max-w-none mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex flex-col lg:flex-row gap-4 lg:gap-6">
           <div className="hidden lg:block">
             <FolderSidebar
               selectedFolderId={folderId}
               onSelect={setFolderId}
-              onDropMove={handleDropMove}
+              onDropMove={actions.handleDropMove}
             />
           </div>
           <NoUrlsCard
-            hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+            hasFilters={hasActiveFilters}
             onClear={() => {
               setSearchInput("");
               setTagFilterInput("");
@@ -323,32 +141,33 @@ const UserUrls = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-purple-50/50">
-      <div className="w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-12 max-w-none mx-auto">
-        {/* Header & Filters */}
-        <div className="mb-6 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="inline-flex w-2 h-2 rounded-full bg-indigo-500" />
+    <div className="bg-gradient-to-br from-slate-50/50 via-indigo-50/30 to-purple-50/50">
+      <div className="w-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 max-w-none mx-auto">
+        <div className="mb-4 sm:mb-6 space-y-3 sm:space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="inline-flex w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-indigo-500" />
               <div>
-                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-transparent">
+                <h2 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-semibold tracking-tight bg-gradient-to-br from-indigo-500 to-purple-600 bg-clip-text text-transparent">
                   Your URLs
                 </h2>
-                <p className="text-slate-600 text-sm sm:text-base">
-                  Organize with folders and tags • {filteredUrls.length} of{" "}
-                  {allUrls.length} URLs
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-slate-600 text-xs sm:text-sm lg:text-base mt-0.5">
+                    {countsText}
+                  </p>
+                  {(isSearching || isTagFiltering) && (
+                    <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 animate-spin" />
+                  )}
+                </div>
               </div>
             </div>
 
             <Link
-              to="/create"
-              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-white font-medium bg-gradient-to-br from-indigo-500 to-purple-600 hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-500/25"
+              to="/dashboard"
+              className="inline-flex items-center gap-2 rounded-xl sm:rounded-2xl px-3 sm:px-4 py-2 sm:py-2.5 text-white font-medium bg-gradient-to-br from-indigo-500 to-purple-600 hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-500/25 text-sm sm:text-base"
             >
-              <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 4a1 1 0 011 1v4h4a1 1 0 110 2h-4v4a1 1 0 11-2 0v-4H5a1 1 0 110-2h4V5a1 1 0 011-1z" />
-              </svg>
-              Create
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="whitespace-nowrap">Create New</span>
             </Link>
           </div>
 
@@ -357,133 +176,118 @@ const UserUrls = () => {
               <input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Search URLs, domains, or content..."
-                className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none"
+                placeholder="Search URLs, domains, tags, or content..."
+                className="w-full pl-8 sm:pl-10 pr-10 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none transition-colors"
               />
-              <svg
-                className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              {searchInput && (
-                <button
-                  onClick={() => setSearchInput("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
+              <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 absolute left-2.5 sm:left-3 top-1/2 transform -translate-y-1/2" />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {isSearching && (
+                  <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 animate-spin" />
+                )}
+                {searchInput && (
+                  <button
+                    onClick={() => setSearchInput("")}
+                    className="text-slate-400 hover:text-slate-600 p-0.5 hover:bg-slate-100 rounded transition-colors"
+                    title="Clear search"
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              )}
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="flex-1 sm:flex-none sm:w-56 relative">
+            <div className="flex-1 sm:flex-none sm:w-48 lg:w-56 relative">
               <input
                 value={tagFilterInput}
                 onChange={(e) => setTagFilterInput(e.target.value)}
                 placeholder="Filter by tag..."
-                className="w-full pl-8 pr-4 py-3 rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none"
+                className="w-full pl-6 sm:pl-8 pr-10 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl border border-slate-200/70 bg-white/80 backdrop-blur-sm text-sm shadow-inner shadow-slate-200/40 focus:ring-2 focus:ring-indigo-500/50 focus:outline-none transition-colors"
               />
-              <span className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium">
-                #
-              </span>
-              {tagFilterInput && (
-                <button
-                  onClick={() => setTagFilterInput("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
+              <Hash className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2" />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {isTagFiltering && (
+                  <Loader2 className="w-3 h-3 sm:w-4 sm:h-4 text-indigo-500 animate-spin" />
+                )}
+                {tagFilterInput && (
+                  <button
+                    onClick={() => setTagFilterInput("")}
+                    className="text-slate-400 hover:text-slate-600 p-0.5 hover:bg-slate-100 rounded transition-colors"
+                    title="Clear tag filter"
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              )}
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {(debouncedSearch || debouncedTagFilter) && (
-            <div className="flex items-center gap-2 text-sm">
+          {hasActiveFilters && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Filter className="w-4 h-4 text-slate-500" />
               <span className="text-slate-600">Active filters:</span>
               {debouncedSearch && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                <span className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
                   Search: "{debouncedSearch}"
                   <button
                     onClick={() => setSearchInput("")}
-                    className="text-indigo-500 hover:text-indigo-700"
+                    className="text-indigo-500 hover:text-indigo-700 ml-1 hover:bg-indigo-100 rounded p-0.5 transition-colors"
                   >
-                    ×
+                    <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
-              {debouncedTagFilter && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
-                  Tag: "#{debouncedTagFilter}"
+              {debouncedTag && (
+                <span className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-medium">
+                  Tag: "#{debouncedTag}"
                   <button
                     onClick={() => setTagFilterInput("")}
-                    className="text-emerald-500 hover:text-emerald-700"
+                    className="text-emerald-500 hover:text-emerald-700 ml-1 hover:bg-emerald-100 rounded p-0.5 transition-colors"
                   >
-                    ×
+                    <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
+              <button
+                onClick={() => {
+                  setSearchInput("");
+                  setTagFilterInput("");
+                }}
+                className="text-xs text-slate-500 hover:text-slate-700 underline ml-2"
+              >
+                Clear all filters
+              </button>
             </div>
           )}
         </div>
 
-        <div className="flex gap-6">
-          {/* Sidebar */}
+        <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
           <div className="hidden lg:block">
             <FolderSidebar
               selectedFolderId={folderId}
               onSelect={setFolderId}
-              onDropMove={handleDropMove}
+              onDropMove={actions.handleDropMove}
             />
           </div>
 
-          {/* Main */}
-          <div className="flex-1 bg-white/80 backdrop-blur-sm rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-visible">
-            {/* Desktop Table (widened: no horizontal slider) */}
+          <div className="flex-1 bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl border border-slate-200/60 shadow-xl shadow-slate-200/40 overflow-visible">
             <div className="hidden lg:block overflow-visible">
               {hasSelection && (
                 <BulkToolbar
                   count={selected.size}
                   hasSelection={hasSelection}
-                  mutateBatch={mutateBatch}
+                  mutateBatch={actions.mutateBatch}
                   clearSel={clearSel}
                   folders={folders}
                   onPickMove={(fid) =>
-                    mutateBatch("moveToFolder", { folderId: fid })
+                    actions.mutateBatch("moveToFolder", { folderId: fid })
                   }
                 />
               )}
 
               {filteredUrls.length === 0 ? (
-                <div className="p-8">
+                <div className="p-6 sm:p-8">
                   <NoUrlsCard
-                    hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+                    hasFilters={hasActiveFilters}
                     onClear={() => {
                       setSearchInput("");
                       setTagFilterInput("");
@@ -492,73 +296,71 @@ const UserUrls = () => {
                 </div>
               ) : (
                 <>
-                  <table className="w-full">
-                    <thead className="bg-white/70 backdrop-blur-sm border-b border-slate-200/70">
-                      <tr>
-                        <th className="px-4 py-4">
-                          <input
-                            type="checkbox"
-                            checked={allSelectedOnPage}
-                            onChange={toggleAllOnPage}
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-full">
+                      <thead className="bg-white/70 backdrop-blur-sm border-b border-slate-200/70">
+                        <tr>
+                          <th className="px-3 sm:px-4 py-3 sm:py-4">
+                            <input
+                              type="checkbox"
+                              checked={allSelectedOnPage}
+                              onChange={toggleAllOnPage}
+                              className="rounded"
+                            />
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide min-w-0">
+                            Original URL
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide min-w-0">
+                            Short URL
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Folder
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Tags
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Status
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Clicks
+                          </th>
+                          <th className="px-3 sm:px-6 py-3 sm:py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredUrls.map((url) => (
+                          <UrlRow
+                            key={url._id}
+                            url={url}
+                            folders={folders}
+                            onMoveFolder={actions.onMoveFolder}
+                            isSelected={selected.has(url._id)}
+                            onToggleSelect={() => toggle(url._id)}
+                            isTagsOpen={isTagOpen(url._id)}
+                            onToggleTags={() => toggleTagOpen(url._id)}
+                            actionLoading={actions.actionLoading === url._id}
+                            copiedId={actions.copiedId}
+                            onCopy={() =>
+                              actions.handleCopy(url._id, url.shortUrl)
+                            }
+                            onPause={() => actions.pause(url._id)}
+                            onResume={() => actions.resume(url._id)}
+                            onDisable={() => actions.disable(url._id)}
+                            onHardDelete={() => actions.hardDelete(url._id)}
+                            selectedIds={Array.from(selected)}
                           />
-                        </th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Original URL
-                        </th>
-                        <th className="px-6 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Short URL
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Folder
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Tags
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Status
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Clicks
-                        </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    {/* ---------- Desktop table rows: pass selectedIds ---------- */}
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredUrls.map((url) => (
-                        <UrlRow
-                          key={url._id}
-                          url={url}
-                          folders={folders}
-                          onMoveFolder={onMoveFolder}
-                          isSelected={selected.has(url._id)}
-                          onToggleSelect={() => toggle(url._id)}
-                          isTagsOpen={!!expandedTags[url._id]}
-                          onToggleTags={() =>
-                            setExpandedTags((s) => ({
-                              ...s,
-                              [url._id]: !s[url._id],
-                            }))
-                          }
-                          actionLoading={actionLoading === url._id}
-                          copiedId={copiedId}
-                          onCopy={() => handleCopy(url._id, url.shortUrl)}
-                          onPause={() => pause(url._id)}
-                          onResume={() => resume(url._id)}
-                          onDisable={() => disable(url._id)}
-                          onHardDelete={() => hardDelete(url._id)}
-                          selectedIds={Array.from(selected)}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-                  {/* Infinite scroll sentinel */}
                   <div
-                    ref={loadMoreRef}
-                    className="p-4 text-center text-slate-400"
+                    ref={tableSentinelRef}
+                    className="p-3 sm:p-4 text-center text-slate-400 text-sm"
                   >
                     {isFetchingNextPage
                       ? "Loading…"
@@ -569,27 +371,28 @@ const UserUrls = () => {
                 </>
               )}
             </div>
-            {/* Mobile/Tablet Cards + inline bulk toolbar */}
+
             <div className="lg:hidden">
               <div className="px-3 pt-3">
                 <MobileBulkToolbar
                   inline
                   count={selected.size}
                   hasSelection={hasSelection}
-                  mutateBatch={mutateBatch}
+                  mutateBatch={actions.mutateBatch}
                   clearSel={clearSel}
                   folders={folders}
                   onPickMove={(fid) =>
-                    mutateBatch("moveToFolder", { folderId: fid })
+                    actions.mutateBatch("moveToFolder", { folderId: fid })
                   }
                   allSelectedOnPage={allSelectedOnPage}
                   toggleAllOnPage={toggleAllOnPage}
                 />
               </div>
+
               {filteredUrls.length === 0 ? (
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <NoUrlsCard
-                    hasFilters={!!(debouncedSearch || debouncedTagFilter)}
+                    hasFilters={hasActiveFilters}
                     onClear={() => {
                       setSearchInput("");
                       setTagFilterInput("");
@@ -598,30 +401,24 @@ const UserUrls = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {/* ---------- Mobile cards: pass selectedIds ---------- */}
                   {filteredUrls.map((url) => (
                     <UrlCard
                       key={url._id}
                       url={url}
                       folders={folders}
-                      onMoveFolder={onMoveFolder}
-                      actionLoading={actionLoading === url._id}
-                      copiedId={copiedId}
-                      onCopy={() => handleCopy(url._id, url.shortUrl)}
-                      onPause={() => pause(url._id)}
-                      onResume={() => resume(url._id)}
-                      onDisable={() => disable(url._id)}
-                      onHardDelete={() => hardDelete(url._id)}
-                      isTagsOpen={!!expandedTags[url._id]}
-                      onToggleTags={() =>
-                        setExpandedTags((s) => ({
-                          ...s,
-                          [url._id]: !s[url._id],
-                        }))
-                      }
+                      onMoveFolder={actions.onMoveFolder}
+                      actionLoading={actions.actionLoading === url._id}
+                      copiedId={actions.copiedId}
+                      onCopy={() => actions.handleCopy(url._id, url.shortUrl)}
+                      onPause={() => actions.pause(url._id)}
+                      onResume={() => actions.resume(url._id)}
+                      onDisable={() => actions.disable(url._id)}
+                      onHardDelete={() => actions.hardDelete(url._id)}
+                      isTagsOpen={isTagOpen(url._id)}
+                      onToggleTags={() => toggleTagOpen(url._id)}
                       isSelected={selected.has(url._id)}
                       onToggleSelect={() => toggle(url._id)}
-                      selectedIds={Array.from(selected)} // << NEW
+                      selectedIds={Array.from(selected)}
                     />
                   ))}
                 </div>
@@ -630,12 +427,25 @@ const UserUrls = () => {
           </div>
         </div>
 
-        {/* Sentinel for infinite scroll (outside table for mobile) */}
         <div
-          ref={loadMoreRef}
-          className="lg:hidden p-4 text-center text-slate-400"
+          ref={mobileSentinelRef}
+          className="lg:hidden p-3 sm:p-4 text-center text-slate-400 text-sm"
         />
       </div>
+
+      <ConfirmModal
+        open={actions.confirmDel.open}
+        title="Delete Link Permanently"
+        message="This action cannot be undone. The link will be permanently deleted and all analytics data will be lost."
+        confirmText="Delete Permanently"
+        cancelText="Cancel"
+        onConfirm={actions.handleConfirmDelete}
+        onClose={() =>
+          actions.setConfirmDel({ open: false, id: null, busy: false })
+        }
+        busy={actions.confirmDel.busy}
+        variant="danger"
+      />
     </div>
   );
 };

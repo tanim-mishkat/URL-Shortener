@@ -23,7 +23,15 @@ dotenv.config({ path: "./.env" });
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+const allowed = (process.env.CORS_ORIGINS || "").split(",").map(s => s.trim()).filter(Boolean);
+app.use(cors({
+    origin: (origin, cb) => {
+        if (!origin || allowed.includes(origin)) return cb(null, true);
+        return cb(new Error("CORS blocked"));
+    },
+    credentials: true
+}));
+
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -46,6 +54,9 @@ app.get("/:id", assetsHandler, wrapAsync(redirectFromShortUrl));
 
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
+
+
+app.get('/api/checkhealth', (_, res) => res.status(200).send('ok')); // for health checks
 
 connectToDB().then(() => {
     app.listen(PORT, () => {

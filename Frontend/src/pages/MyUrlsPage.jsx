@@ -1,6 +1,6 @@
-import UrlForm from "../components/UrlForm.jsx";
+import UserUrls from "../components/UserUrls.jsx";
 
-const DashboardPage = () => {
+const MyUrlsPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 relative">
       {/* Background Decorative Elements */}
@@ -25,15 +25,15 @@ const DashboardPage = () => {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
                 />
               </svg>
             </div>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-slate-900 mb-3 sm:mb-4">
-              Dashboard
+              My URLs
             </h1>
             <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed px-4">
-              Create and shorten your URLs quickly and easily
+              Manage, organize, and track all your shortened URLs in one place
             </p>
           </div>
         </div>
@@ -42,9 +42,9 @@ const DashboardPage = () => {
       {/* Main Content */}
       <div className="relative z-10 flex-1 pb-8 sm:pb-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* URL Shortening Section */}
+          {/* User URLs Section */}
           <section>
-            <UrlForm />
+            <UserUrls />
           </section>
         </div>
       </div>
@@ -55,4 +55,4 @@ const DashboardPage = () => {
   );
 };
 
-export default DashboardPage;
+export default MyUrlsPage;
