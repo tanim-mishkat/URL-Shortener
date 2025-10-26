@@ -26,6 +26,8 @@
 
 A production-ready URL shortener application featuring user accounts, folder organization, tag management, server-side analytics aggregation, and a responsive React frontend. The system provides comprehensive link management with detailed analytics and organizational tools.
 
+- **Links:** **[Live Site](https://url-shortener-frontend-q3gy.onrender.com/)** | **[Demo video](https://youtu.be/a0UaPkrp4fE?si=1z83eoTak34IppHf)**
+
 **Key Features:**
 
 - User registration and authentication
